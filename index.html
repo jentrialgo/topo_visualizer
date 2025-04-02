@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Topology Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="ui">
+        <h2>Network Topology</h2>
+        <div>
+            <label for="topologyType">Type:</label>
+            <select id="topologyType">
+                <option value="ring" selected>Ring</option>
+                <option value="mesh">Mesh (Grid)</option>
+                <option value="torus">Torus</option> </select>
+                </select>
+        </div>
+
+        <div id="paramsContainer">
+            </div>
+
+        <hr>
+        <h3>Network Metrics</h3>
+        
+        <div id="metrics">
+            Diameter: <span id="diameter">N/A</span><br>
+            Avg Path Length: <span id="avgPathLength">N/A</span><br>
+            Nodes: <span id="nodeCount">N/A</span><br>
+            Edges: <span id="edgeCount">N/A</span><br>
+            </div>
+         <p><small>Scroll to zoom, Drag to rotate.</small></p>
+    </div>
+
+    <div id="container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script src="main.js"></script>
+</body>
+</html>
