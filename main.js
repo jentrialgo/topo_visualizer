@@ -19,6 +19,8 @@ const NODE_SEGMENTS = 16;
 const EDGE_COLOR = 0xaaaaaa;
 const NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x00aaff, roughness: 0.5, metalness: 0.2 });
 const EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
+const WRAP_EDGE_COLOR = 0xffaa00; // Orange for wrap edges (choose any contrasting color)
+const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
 
 // --- Initialization ---
 function init() {
@@ -63,20 +65,26 @@ function setupThreeJS() {
 function setupUIEventListeners() {
     // 1. Update on topology dropdown change
     topologyTypeSelect.addEventListener('change', () => {
-        updateParameterInputs(); // Rebuild necessary parameter fields first
-        generateGraphAndMetrics(); // Then, immediately generate the new topology
+        updateParameterInputs(); // Rebuild inputs first
+        generateGraphAndMetrics(); // Then generate
     });
 
-    // 2. Use event delegation to listen for changes on dynamic parameter inputs
-    //    Listen on the container, but react only if the event came from an input inside it.
-    //    Using 'input' provides immediate feedback as the user types or uses arrow keys.
-    paramsContainer.addEventListener('input', (event) => {
-        if (event.target && event.target.nodeName === 'INPUT' && event.target.type === 'number') {
-            // Optional: Add debounce here later if performance becomes an issue
-            // e.g., by wrapping generateGraphAndMetrics in a setTimeout/clearTimeout pattern
+    // 2. Use event delegation with 'change' for parameter inputs (numbers + checkbox)
+    paramsContainer.addEventListener('change', (event) => {
+        if (event.target && event.target.nodeName === 'INPUT' &&
+            (event.target.type === 'number' || event.target.type === 'checkbox')) {
             generateGraphAndMetrics();
         }
     });
+
+     // Optional: Add 'input' listener *only* for number inputs if you want instant updates
+     // while typing in number fields, but be mindful of performance.
+     // paramsContainer.addEventListener('input', (event) => {
+     //     if (event.target && event.target.nodeName === 'INPUT' && event.target.type === 'number') {
+     //         // Consider debouncing generateGraphAndMetrics() here
+     //         generateGraphAndMetrics();
+     //     }
+     // });
 }
 
 function updateParameterInputs() {
@@ -88,31 +96,35 @@ function updateParameterInputs() {
         addNumericInput('nodes', 'Nodes:', 12, 3, 100);
         addNumericInput('skip', 'Skip Dist:', 1, 1, 50);
         nodesInput = document.getElementById('nodes'); // Get reference
-    } else if (type === 'mesh' || type === 'torus') { // **** UPDATED LINE ****
-        // Mesh and Torus use the same parameters
+    } else if (type === 'mesh' || type === 'torus') {
+        // Mesh and Torus use the same base parameters
         addNumericInput('rows', 'Rows:', 4, 2, 20);
         addNumericInput('cols', 'Cols:', 5, 2, 20);
+
+        if (type === 'torus') {
+            addCheckboxInput('use3DLayout', 'Use 3D Layout:', false); // Default to 2D+Style view
+        }
     }
     // Add else if blocks for other topologies
 
     // Dynamic skip limit adjustment for rings (remains the same)
     const skipInput = document.getElementById('skip');
-    if (nodesInput && skipInput) { // Check needed as skipInput might not exist
+    if (nodesInput && skipInput) {
         const updateMaxSkip = () => {
-            const nValue = nodesInput.value;
-            if (nValue) {
-                const n = parseInt(nValue, 10);
-                const currentMax = Math.max(1, Math.floor(n / 2));
-                if (parseInt(skipInput.max) !== currentMax) {
-                    skipInput.max = currentMax;
-                }
-                if (parseInt(skipInput.value, 10) > currentMax) {
-                    skipInput.value = currentMax;
-                    generateGraphAndMetrics();
-                }
-            }
-        };
-        nodesInput.addEventListener('input', updateMaxSkip);
+             const nValue = nodesInput.value;
+             if (nValue){
+                  const n = parseInt(nValue, 10);
+                  const currentMax = Math.max(1, Math.floor(n / 2));
+                  if (parseInt(skipInput.max) !== currentMax) {
+                      skipInput.max = currentMax;
+                  }
+                  if (parseInt(skipInput.value, 10) > currentMax) {
+                       skipInput.value = currentMax;
+                       generateGraphAndMetrics(); // Regenerate if value clamped
+                  }
+             }
+         };
+        nodesInput.addEventListener('input', updateMaxSkip); // Use input for immediate max update
         updateMaxSkip();
     }
 }
@@ -133,24 +145,60 @@ function addNumericInput(id, labelText, defaultValue, min, max) {
     paramsContainer.appendChild(div);
 }
 
+// Helper function to add checkbox input
+function addCheckboxInput(id, labelText, defaultChecked) {
+    const div = document.createElement('div');
+    div.style.display = 'flex'; // Use flexbox for alignment
+    div.style.alignItems = 'center';
+    div.style.marginBottom = '10px'; // Consistent spacing
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = id;
+    input.checked = defaultChecked;
+    input.style.marginRight = '8px'; // Space between checkbox and label
+    input.style.width = 'auto'; // Override potential inherited width
+
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.textContent = labelText;
+    label.style.width = 'auto'; // Override fixed width from numeric inputs
+    label.style.marginBottom = '0'; // Remove bottom margin if set elsewhere
+    label.style.fontWeight = 'normal'; // Normal weight for checkbox label
+
+
+    div.appendChild(input); // Checkbox first
+    div.appendChild(label);
+    paramsContainer.appendChild(div);
+}
+
 // --- Graph Generation & Metrics ---
 function generateGraphAndMetrics() {
-    clearVisualization(); // Remove old graph from scene
+    clearVisualization();
 
     const type = topologyTypeSelect.value;
     let params = {};
+    let use3DLayout = false; // Default layout choice for Torus
+
+    // Read parameter values from the dynamically created inputs
     paramsContainer.querySelectorAll('input').forEach(input => {
-        let value = parseInt(input.value, 10);
-        if (isNaN(value)) {
-            const minVal = parseInt(input.min);
-            value = isNaN(minVal) ? 1 : minVal; // Fallback to min or 1 if min isn't set
-            console.warn(`Invalid input for ${input.id}, using fallback value: ${value}`);
-            input.value = value; // Correct the input field visually
+        if (input.type === 'number') {
+            let value = parseInt(input.value, 10);
+            if (isNaN(value)) {
+                const minVal = parseInt(input.min);
+                value = isNaN(minVal) ? 1 : minVal;
+                console.warn(`Invalid input for ${input.id}, using fallback value: ${value}`);
+                input.value = value;
+            }
+            params[input.id] = value;
+        } else if (input.type === 'checkbox' && input.id === 'use3DLayout') {
+            // **** READ CHECKBOX STATE ****
+            use3DLayout = input.checked;
         }
-        params[input.id] = value;
     });
 
     // --- Generate graph data structure ---
+    // (Generation logic remains the same, based only on type and params like rows/cols/skip)
     if (type === 'ring') {
         graphData = generateRing(params.nodes || 12, params.skip || 1);
     } else if (type === 'mesh') {
@@ -161,12 +209,10 @@ function generateGraphAndMetrics() {
     // --- End Generation ---
 
     // Calculate Metrics
-    // ** Changed: Call the combined metrics function **
     const metrics = calculateGraphMetrics(graphData);
 
     // Update UI
     diameterSpan.textContent = metrics.diameter === Infinity ? 'Disconnected' : metrics.diameter;
-    // ** Added: Update the average path length display **
     avgPathLengthSpan.textContent = metrics.avgPathLength === Infinity ? 'Disconnected' : metrics.avgPathLength;
     nodeCountSpan.textContent = graphData.nodes.length;
     edgeCountSpan.textContent = graphData.edges.length;
@@ -174,7 +220,8 @@ function generateGraphAndMetrics() {
 
     // Visualize the new graph
     if (graphData.nodes.length > 0) {
-        visualizeGraph(graphData, type); // Pass type for layout hinting
+        // **** PASS LAYOUT CHOICE TO VISUALIZE FUNCTION ****
+        visualizeGraph(graphData, type, use3DLayout);
     }
 }
 
@@ -440,135 +487,132 @@ function clearVisualization() {
     // EDGE_MATERIAL.dispose();
 }
 
-function visualizeGraph(graph, type) {
+function visualizeGraph(graph, type, use3DLayout = false) {
     clearVisualization();
-    const nodePositions = new Map(); // Store Vector3 positions by node id
+    const nodePositions = new Map();
     const n = graph.nodes.length;
+    const nodeIdToData = new Map();
+    graph.nodes.forEach(node => nodeIdToData.set(node.id, node));
 
     // --- 1. Calculate Layout Positions ---
-    if (n > 0) { // Only calculate if nodes exist
-
-        // Determine grid dimensions (needed for mesh/torus) - placed here for broader access
-        let rows = 1, cols = n; // Defaults
-        // Check if graph nodes exist and have row/col properties
-        if (graph.nodes[0]?.hasOwnProperty('row') && graph.nodes[0]?.hasOwnProperty('col')) {
-             rows = Math.max(...graph.nodes.map(n => n.row ?? 0)) + 1;
-             cols = Math.max(...graph.nodes.map(n => n.col ?? 0)) + 1;
+    let rows = 1, cols = n; // Initialize dimensions
+    if (n > 0) {
+        // Determine grid dimensions reliably
+        if ((type === 'mesh' || type === 'torus') && graph.nodes[0]?.hasOwnProperty('row') && graph.nodes[0]?.hasOwnProperty('col')) {
+            rows = Math.max(...graph.nodes.map(n => n.row ?? 0)) + 1;
+            cols = Math.max(...graph.nodes.map(n => n.col ?? 0)) + 1;
         } else if (type === 'mesh' || type === 'torus') {
-             // Fallback if row/col info missing (less reliable)
-             cols = Math.ceil(Math.sqrt(n));
-             rows = Math.ceil(n / cols);
-             console.warn("Node row/col data missing, estimating grid dimensions.");
+            cols = Math.ceil(Math.sqrt(n)); rows = Math.ceil(n / cols);
         }
 
-
+        // --- Apply Layout based on Type and Choice ---
         if (type === 'ring') {
-            const layoutRadius = n > 1 ? Math.max(5, n * 0.8) : 0; // Base radius on node count
-            graph.nodes.forEach((node, i) => {
-                const angle = (i / n) * Math.PI * 2;
-                const x = layoutRadius * Math.cos(angle);
-                const y = layoutRadius * Math.sin(angle);
-                nodePositions.set(node.id, new THREE.Vector3(x, y, 0));
-            });
-            // Adjust camera for ring
-            const camDist = layoutRadius * 2.5;
-            camera.position.set(0, 0, camDist < 30 ? 30 : camDist); // Zoom out based on radius
+            // --- Ring Layout --- (Unchanged)
+            const layoutRadius = n > 1 ? Math.max(5, n * 0.8) : 0;
+            graph.nodes.forEach((node, i) => { const angle = (i / n) * Math.PI * 2; const x = layoutRadius * Math.cos(angle); const y = layoutRadius * Math.sin(angle); nodePositions.set(node.id, new THREE.Vector3(x, y, 0)); });
+            const camDist = layoutRadius * 2.5; camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
 
-        } else if (type === 'mesh') { // Grid layout for Mesh
-            const gridSpacing = 3 * NODE_RADIUS; // How far apart nodes are
-            const totalWidth = (cols - 1) * gridSpacing;
-            const totalHeight = (rows - 1) * gridSpacing;
+        } else if (type === 'mesh') {
+            // --- Mesh Grid Layout --- (Unchanged)
+            const gridSpacing = 3 * NODE_RADIUS; const totalWidth = (cols - 1) * gridSpacing; const totalHeight = (rows - 1) * gridSpacing;
+            graph.nodes.forEach(node => { const r = node.row ?? Math.floor(node.id / cols); const c = node.col ?? (node.id % cols); const x = (c * gridSpacing) - totalWidth / 2; const y = (-r * gridSpacing) + totalHeight / 2; nodePositions.set(node.id, new THREE.Vector3(x, y, 0)); });
+            const camDist = Math.max(totalWidth, totalHeight, 20) * 1.5; camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
 
-            graph.nodes.forEach(node => {
-                // Use calculated/fallback rows/cols if node properties missing
-                const r = node.row ?? Math.floor(node.id / cols);
-                const c = node.col ?? (node.id % cols);
-                const x = (c * gridSpacing) - totalWidth / 2;
-                const y = (-r * gridSpacing) + totalHeight / 2;
-                nodePositions.set(node.id, new THREE.Vector3(x, y, 0));
-            });
-            // Adjust camera for mesh
-            const camDist = Math.max(totalWidth, totalHeight, 20) * 1.5;
-            camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
-
-        } else if (type === 'torus') { // **** NEW: 3D Torus Layout ****
-
-            // --- Define Torus Radii ---
-            // Adjust these multipliers for different looks
-            const nodeSpacingFactor = NODE_RADIUS * 3.5; // Controls spacing along circumferences
-            const minorCircumference = rows * nodeSpacingFactor;
-            const minorRadius = Math.max(NODE_RADIUS * 1.5, minorCircumference / (2 * Math.PI)); // Tube radius
-
-            const majorCircumference = cols * nodeSpacingFactor;
-            // Ensure Major Radius is large enough to fit the minor radius comfortably
-            const majorRadius = Math.max(minorRadius * 2.0, majorCircumference / (2 * Math.PI));
-
-            // --- Calculate Node Positions ---
-            graph.nodes.forEach(node => {
-                // Use calculated/fallback rows/cols if node properties missing
-                const r = node.row ?? Math.floor(node.id / cols);
-                const c = node.col ?? (node.id % cols);
-
-                // Calculate angles for the parametric equation
-                // Major angle (phi) goes around the main ring (based on column)
-                const majorAngle = (c / cols) * Math.PI * 2;
-                // Minor angle (theta) goes around the tube cross-section (based on row)
-                const minorAngle = (r / rows) * Math.PI * 2;
-
-                // Torus parametric equation (main ring in XY plane)
-                const x = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.cos(majorAngle);
-                const y = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.sin(majorAngle);
-                const z = minorRadius * Math.sin(minorAngle);
-
-                nodePositions.set(node.id, new THREE.Vector3(x, y, z));
-            });
-
-            // --- Adjust Camera ---
-            // Zoom out based on the overall size of the torus
-            const viewDistance = (majorRadius + minorRadius) * 2.2;
-            // Position camera slightly above the center, looking at the origin
-            camera.position.set(0, minorRadius * 0.5 , viewDistance < 30 ? 30 : viewDistance);
-            camera.lookAt(0, 0, 0); // Point camera towards the center
-
+        } else if (type === 'torus') {
+            // --- Conditional Torus Layout ---
+            if (use3DLayout) {
+                // --- 3D Geometric Torus Layout --- (Unchanged)
+                const nodeSpacingFactor = NODE_RADIUS * 3.5; const minorCircumference = rows * nodeSpacingFactor; const minorRadius = Math.max(NODE_RADIUS * 1.5, minorCircumference / (2 * Math.PI)); const majorCircumference = cols * nodeSpacingFactor; const majorRadius = Math.max(minorRadius * 2.0, majorCircumference / (2 * Math.PI));
+                graph.nodes.forEach(node => { const r = node.row ?? 0; const c = node.col ?? 0; const majorAngle = (c / cols) * Math.PI * 2; const minorAngle = (r / rows) * Math.PI * 2; const x = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.cos(majorAngle); const y = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.sin(majorAngle); const z = minorRadius * Math.sin(minorAngle); nodePositions.set(node.id, new THREE.Vector3(x, y, z)); });
+                const viewDistance = (majorRadius + minorRadius) * 2.2; camera.position.set(0, minorRadius * 0.5 , viewDistance < 30 ? 30 : viewDistance);
+            } else {
+                // --- 2D Grid Layout (for Torus) --- (Unchanged layout logic)
+                const gridSpacing = 3 * NODE_RADIUS; const totalWidth = (cols - 1) * gridSpacing; const totalHeight = (rows - 1) * gridSpacing;
+                graph.nodes.forEach(node => { const r = node.row ?? Math.floor(node.id / cols); const c = node.col ?? (node.id % cols); const x = (c * gridSpacing) - totalWidth / 2; const y = (-r * gridSpacing) + totalHeight / 2; nodePositions.set(node.id, new THREE.Vector3(x, y, 0)); });
+                const camDist = Math.max(totalWidth, totalHeight, 20) * 1.5; camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
+            }
         }
-        // Add layout logic for other topologies here
-    } // End if (n > 0)
+         // Add layout logic for other topologies here
+    } // End if (n > 0) for layout
 
     // --- 2. Create Node Meshes ---
-    // (This part remains unchanged - uses the calculated nodePositions)
     graph.nodes.forEach(node => {
-        const geometry = new THREE.SphereGeometry(NODE_RADIUS, NODE_SEGMENTS, NODE_SEGMENTS);
-        const mesh = new THREE.Mesh(geometry, NODE_MATERIAL); // Assumes NODE_MATERIAL is defined globally
-        const nodePos = nodePositions.get(node.id);
-        if (nodePos) {
-            mesh.position.copy(nodePos);
-        } else {
-            console.warn(`Position not found for node ${node.id} during mesh creation.`);
-            mesh.position.set(0,0,0); // Place at origin if missing
+        try { // Add try-catch for detailed error within loop
+            const geometry = new THREE.SphereGeometry(NODE_RADIUS, NODE_SEGMENTS, NODE_SEGMENTS);
+            const mesh = new THREE.Mesh(geometry, NODE_MATERIAL);
+            const nodePos = nodePositions.get(node.id);
+            if (nodePos) {
+                mesh.position.copy(nodePos);
+            } else {
+                console.warn(`Position not found for node ${node.id} during mesh creation.`);
+                mesh.position.set(0, 0, 0);
+            }
+            scene.add(mesh);
+            nodeMeshes.push(mesh);
+        } catch (error) {
+            console.error(`Error creating node ${node.id}:`, error); // DEBUG
         }
-        scene.add(mesh);
-        nodeMeshes.push(mesh);
     });
 
-    // --- 3. Create Edge Meshes (Lines) ---
-    // (This part remains unchanged - draws straight lines between 3D nodePositions)
+    // --- 3. Create Edge Meshes (Conditional Lines / Curves) ---
     graph.edges.forEach(edge => {
         const pos1 = nodePositions.get(edge.source);
         const pos2 = nodePositions.get(edge.target);
+        const node1 = nodeIdToData.get(edge.source);
+        const node2 = nodeIdToData.get(edge.target);
 
-        if (pos1 && pos2) {
-            const geometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
-            const line = new THREE.Line(geometry, EDGE_MATERIAL); // Assumes EDGE_MATERIAL is defined globally
+        if (pos1 && pos2 && node1 && node2) {
+            let isWrapEdge = false;
+            let geometry;
+            let lineMaterial = EDGE_MATERIAL; // Default to standard material and straight line
+
+            // Check for wrap edge status specifically for Torus
+            if (type === 'torus' && node1.hasOwnProperty('row') && node1.hasOwnProperty('col')) {
+                 // Need rows/cols dimensions calculated earlier (ensure they are in scope)
+                 if (cols > 1 && Math.abs(node1.col - node2.col) === cols - 1) isWrapEdge = true; // Horizontal wrap
+                 if (rows > 1 && Math.abs(node1.row - node2.row) === rows - 1) isWrapEdge = true; // Vertical wrap
+            }
+
+            // Decide geometry and material based on wrap status and layout mode
+            if (isWrapEdge && type === 'torus' && !use3DLayout) {
+                // **** Draw Wrap Edge as CURVE in 2D Layout ****
+                lineMaterial = WRAP_EDGE_MATERIAL; // Use wrap color
+
+                // Calculate midpoint and curve height
+                const midpoint = new THREE.Vector3().lerpVectors(pos1, pos2, 0.5);
+                const dist = pos1.distanceTo(pos2);
+                // Curve height proportional to distance, with min/max bounds. Adjust multiplier (0.15) as needed.
+                const curveHeight = Math.min(Math.max(1.5, dist * 0.45), 40);
+
+                // Simple Z offset for curve control point (lifts curve off the XY plane)
+                const controlPoint = midpoint.clone().add(new THREE.Vector3(0, 0, -curveHeight));
+
+                // Create Quadratic Bezier Curve
+                const curve = new THREE.QuadraticBezierCurve3(pos1, controlPoint, pos2);
+                const points = curve.getPoints(20); // Number of segments for the curve line
+                geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+            } else {
+                // **** Draw Straight Line ****
+                // (For non-wrap edges in 2D Torus, all edges in Mesh/Ring, all edges in 3D Torus)
+                geometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
+                // Material remains EDGE_MATERIAL (gray) unless we decide to color wraps in 3D too
+            }
+
+            // Create the line object
+            const line = new THREE.Line(geometry, lineMaterial);
             scene.add(line);
             edgeMeshes.push(line);
-        } else {
-             console.warn("Could not find positions for edge:", edge, " SourcePos:", pos1, " TargetPos:", pos2);
-        }
+
+        } else { console.warn(/* ... could not find positions ... */); }
     });
 
     // --- Final Adjustments ---
-    controls.target.set(0, 0, 0); // Ensure controls are centered
-    controls.update(); // Important after camera manipulations
+    controls.target.set(0, 0, 0); // Reset target
+    if (type === 'torus' && use3DLayout) {
+        camera.lookAt(0, 0, 0); // Point camera towards the center for 3D view
+    }
+    controls.update();
 }
 
 // --- Animation Loop ---
