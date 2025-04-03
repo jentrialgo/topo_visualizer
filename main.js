@@ -104,10 +104,14 @@ function updateParameterInputs() {
         if (type === 'torus') {
             addCheckboxInput('use3DLayout', 'Use 3D Layout:', false); // Default to 2D+Style view
         }
+    } else if (type === 'hypercube') {
+        // Dimension 'd' for d-dimensional hypercube
+        // Limit max dimension for practical visualization/performance (e.g., 6 -> 64 nodes)
+        addNumericInput('dimension', 'Dimension (d):', 3, 1, 6);
     }
     // Add else if blocks for other topologies
 
-    // Dynamic skip limit adjustment for rings (remains the same)
+    // Dynamic skip limit adjustment for rings
     const skipInput = document.getElementById('skip');
     if (nodesInput && skipInput) {
         const updateMaxSkip = () => {
@@ -205,6 +209,8 @@ function generateGraphAndMetrics() {
         graphData = generateMesh(params.rows || 4, params.cols || 5);
     } else if (type === 'torus') {
         graphData = generateTorus(params.rows || 4, params.cols || 5);
+    } else if (type === 'hypercube') { // **** ADD THIS ELSE IF ****
+        graphData = generateHypercube(params.dimension || 3); // Default to 3D cube
     }
     // --- End Generation ---
 
@@ -221,7 +227,7 @@ function generateGraphAndMetrics() {
     // Visualize the new graph
     if (graphData.nodes.length > 0) {
         // **** PASS LAYOUT CHOICE TO VISUALIZE FUNCTION ****
-        visualizeGraph(graphData, type, use3DLayout);
+        visualizeGraph(graphData, type, use3DLayout, params);
     }
 }
 
@@ -366,6 +372,56 @@ function generateTorus(rows, cols) {
     return { nodes, edges };
 }
 
+function generateHypercube(d) {
+    const nodes = [];
+    const edges = [];
+    // Basic validation
+    if (d < 0) d = 0; // 0-cube is a single point
+    if (d > 10) {
+        console.warn(`Hypercube dimension ${d} too large, may cause performance issues. Clamping to 10.`);
+        d = 10; // Limit for practical reasons (1024 nodes)
+    }
+
+
+    const n = Math.pow(2, d); // Total number of nodes
+
+    // --- Generate Nodes ---
+    for (let i = 0; i < n; i++) {
+        // Store the ID and its binary representation (useful for layout)
+        // Pad with leading zeros to ensure fixed length d
+        nodes.push({
+            id: i,
+            binary: i.toString(2).padStart(d, '0')
+        });
+    }
+
+    // --- Generate Edges ---
+    // Nodes are connected if their binary representations differ by exactly one bit
+    if (d > 0) { // No edges if d=0
+        const addedEdges = new Set(); // To prevent duplicates like i->j and j->i
+
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < d; j++) {
+                // Calculate neighbor by flipping the j-th bit (using XOR)
+                const neighborId = i ^ (1 << j); // (1 << j) creates a mask like 00100
+
+                // Ensure neighborId is valid (should always be within 0 to n-1)
+                // Add edge only once (e.g., if source < target)
+                const min = Math.min(i, neighborId);
+                const max = Math.max(i, neighborId);
+                const edgeKey = `${min}-${max}`;
+
+                if (!addedEdges.has(edgeKey)) {
+                    edges.push({ source: i, target: neighborId });
+                    addedEdges.add(edgeKey);
+                }
+            }
+        }
+    }
+
+    return { nodes, edges };
+}
+
 // --- Metric Calculation Functions ---
 function calculateGraphMetrics(graph) {
     const n = graph.nodes.length;
@@ -487,7 +543,7 @@ function clearVisualization() {
     // EDGE_MATERIAL.dispose();
 }
 
-function visualizeGraph(graph, type, use3DLayout = false) {
+function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
     clearVisualization();
     const nodePositions = new Map();
     const n = graph.nodes.length;
@@ -495,7 +551,10 @@ function visualizeGraph(graph, type, use3DLayout = false) {
     graph.nodes.forEach(node => nodeIdToData.set(node.id, node));
 
     // --- 1. Calculate Layout Positions ---
-    let rows = 1, cols = n; // Initialize dimensions
+    let rows = 1, cols = n; // Initialize dimensions for mesh/torus/grid fallback
+    let camDist = 30; // Default camera distance
+    const baseScale = 5; // Base scale factor for layouts
+
     if (n > 0) {
         // Determine grid dimensions reliably
         if ((type === 'mesh' || type === 'torus') && graph.nodes[0]?.hasOwnProperty('row') && graph.nodes[0]?.hasOwnProperty('col')) {
@@ -531,8 +590,65 @@ function visualizeGraph(graph, type, use3DLayout = false) {
                 graph.nodes.forEach(node => { const r = node.row ?? Math.floor(node.id / cols); const c = node.col ?? (node.id % cols); const x = (c * gridSpacing) - totalWidth / 2; const y = (-r * gridSpacing) + totalHeight / 2; nodePositions.set(node.id, new THREE.Vector3(x, y, 0)); });
                 const camDist = Math.max(totalWidth, totalHeight, 20) * 1.5; camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
             }
-        }
-        // Add layout logic for other topologies here
+        } else if (type === 'hypercube') { // **** ADD HYPERCUBE LAYOUT ****
+            const d = params.dimension || 0; // Get dimension from params
+            let scale = baseScale; // Adjust scale based on dimension
+
+            if (d === 0) { // Single node
+                nodePositions.set(0, new THREE.Vector3(0, 0, 0));
+                scale = 1;
+            } else if (d === 1) { // Line
+                scale = baseScale * 0.5;
+                nodePositions.set(0, new THREE.Vector3(-scale, 0, 0)); // Binary '0'
+                nodePositions.set(1, new THREE.Vector3(scale, 0, 0)); // Binary '1'
+            } else if (d === 2) { // Square
+                scale = baseScale * 0.8;
+                graph.nodes.forEach(node => {
+                    const bits = node.binary; // e.g., "01"
+                    const x = (bits[0] === '0' ? -scale : scale); // Bit 0 -> X
+                    const y = (bits[1] === '0' ? -scale : scale); // Bit 1 -> Y
+                    nodePositions.set(node.id, new THREE.Vector3(x, y, 0));
+                });
+            } else if (d === 3) { // Cube
+                scale = baseScale * 1.0;
+                graph.nodes.forEach(node => {
+                    const bits = node.binary; // e.g., "011"
+                    const x = (bits[0] === '0' ? -scale : scale); // Bit 0 -> X
+                    const y = (bits[1] === '0' ? -scale : scale); // Bit 1 -> Y
+                    const z = (bits[2] === '0' ? -scale : scale); // Bit 2 -> Z
+                    nodePositions.set(node.id, new THREE.Vector3(x, y, z));
+                });
+            } else if (d === 4) { // Tesseract (two cubes)
+                scale = baseScale * 1.2;
+                const scaleInner = 0.6; // Scale factor for the 'inner' cube
+                graph.nodes.forEach(node => {
+                    const bits = node.binary; // e.g., "1010"
+                    const wBit = bits[0]; // Use first bit for W (inner/outer)
+                    const xBit = bits[1]; // Bit 1 -> X
+                    const yBit = bits[2]; // Bit 2 -> Y
+                    const zBit = bits[3]; // Bit 3 -> Z
+
+                    let currentScale = (wBit === '0' ? scale * scaleInner : scale);
+                    const x = (xBit === '0' ? -currentScale : currentScale);
+                    const y = (yBit === '0' ? -currentScale : currentScale);
+                    const z = (zBit === '0' ? -currentScale : currentScale);
+                    nodePositions.set(node.id, new THREE.Vector3(x, y, z));
+                });
+            } else { // Fallback for d > 4: Circular Layout
+                console.warn(`Hypercube dimension ${d} > 4. Using fallback circular layout.`);
+                const layoutRadius = n > 1 ? Math.max(5, n * 0.5) : 0; // Adjust radius calc
+                graph.nodes.forEach((node, i) => {
+                    const angle = (i / n) * Math.PI * 2;
+                    const x = layoutRadius * Math.cos(angle);
+                    const y = layoutRadius * Math.sin(angle);
+                    nodePositions.set(node.id, new THREE.Vector3(x, y, 0));
+                });
+                scale = layoutRadius; // Base camera distance on radius
+            }
+            // Adjust camera distance for hypercube based on overall scale
+            camDist = scale * 3.5;
+
+        }  // Add layout logic for other topologies here
     } // End if (n > 0) for layout
 
     // --- 2. Create Node Meshes ---
@@ -554,8 +670,11 @@ function visualizeGraph(graph, type, use3DLayout = false) {
         }
     });
 
+    // Adjust camera Z position, ensuring minimum distance
+    camera.position.z = Math.max(30, camDist); // Use calculated camDist
+
+
     // --- 3. Create Edge Meshes (Conditional Lines / Curves) ---
-    // --- 3. Create Edge Meshes (Rounded Rect Arcs or Lines) ---
     graph.edges.forEach(edge => {
         const pos1 = nodePositions.get(edge.source);
         const pos2 = nodePositions.get(edge.target);
@@ -734,6 +853,8 @@ function visualizeGraph(graph, type, use3DLayout = false) {
     controls.target.set(0, 0, 0); // Reset target
     if (type === 'torus' && use3DLayout) {
         camera.lookAt(0, 0, 0); // Point camera towards the center for 3D view
+    } else if (type === 'hypercube' && params.dimension && params.dimension > 1) {
+        camera.lookAt(0, 0, 0); // Look at center for hypercubes too
     }
     controls.update();
 }
