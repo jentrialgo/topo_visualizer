@@ -63,9 +63,9 @@ body {
 
 
 #ui input[type="number"] {
-     width: calc(100% - 95px); /* Ensure input takes remaining width */
+     width: calc(100% - 145px); /* Ensure input takes remaining width */
+     text-align: center;
 }
-
 
 #ui button {
     width: 100%; /* Button takes full width */

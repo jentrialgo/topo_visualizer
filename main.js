@@ -135,15 +135,31 @@ function updateParameterInputs() {
 
 function addNumericInput(id, labelText, defaultValue, min, max) {
     const div = document.createElement('div');
+    // --- Style the container div ---
+    div.style.display = 'flex';         // Use flexbox to arrange items horizontally
+    div.style.alignItems = 'center';    // Vertically align label text and input box
+    div.style.justifyContent = 'space-between'; // Put space between label and input
+    div.style.marginBottom = '10px';    // Add some spacing below this input row
+
     const label = document.createElement('label');
     label.htmlFor = id;
     label.textContent = labelText;
+    // Optional: Give label a fixed width for consistent alignment across rows
+    label.style.width = '120px'; // Adjust width as needed
+    // label.style.marginRight = '10px'; // Add space if using fixed width
+    // if using fixed label width, change justify-content:
+    div.style.justifyContent = 'flex-start';
+
+
     const input = document.createElement('input');
     input.type = 'number';
     input.id = id;
     input.value = defaultValue;
     input.min = min;
     input.max = max;
+    // Optional: Limit input width
+    // input.style.width = '60px';
+
     div.appendChild(label);
     div.appendChild(input);
     paramsContainer.appendChild(div);
