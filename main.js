@@ -77,14 +77,14 @@ function setupUIEventListeners() {
         }
     });
 
-     // Optional: Add 'input' listener *only* for number inputs if you want instant updates
-     // while typing in number fields, but be mindful of performance.
-     // paramsContainer.addEventListener('input', (event) => {
-     //     if (event.target && event.target.nodeName === 'INPUT' && event.target.type === 'number') {
-     //         // Consider debouncing generateGraphAndMetrics() here
-     //         generateGraphAndMetrics();
-     //     }
-     // });
+    // Optional: Add 'input' listener *only* for number inputs if you want instant updates
+    // while typing in number fields, but be mindful of performance.
+    // paramsContainer.addEventListener('input', (event) => {
+    //     if (event.target && event.target.nodeName === 'INPUT' && event.target.type === 'number') {
+    //         // Consider debouncing generateGraphAndMetrics() here
+    //         generateGraphAndMetrics();
+    //     }
+    // });
 }
 
 function updateParameterInputs() {
@@ -111,19 +111,19 @@ function updateParameterInputs() {
     const skipInput = document.getElementById('skip');
     if (nodesInput && skipInput) {
         const updateMaxSkip = () => {
-             const nValue = nodesInput.value;
-             if (nValue){
-                  const n = parseInt(nValue, 10);
-                  const currentMax = Math.max(1, Math.floor(n / 2));
-                  if (parseInt(skipInput.max) !== currentMax) {
-                      skipInput.max = currentMax;
-                  }
-                  if (parseInt(skipInput.value, 10) > currentMax) {
-                       skipInput.value = currentMax;
-                       generateGraphAndMetrics(); // Regenerate if value clamped
-                  }
-             }
-         };
+            const nValue = nodesInput.value;
+            if (nValue) {
+                const n = parseInt(nValue, 10);
+                const currentMax = Math.max(1, Math.floor(n / 2));
+                if (parseInt(skipInput.max) !== currentMax) {
+                    skipInput.max = currentMax;
+                }
+                if (parseInt(skipInput.value, 10) > currentMax) {
+                    skipInput.value = currentMax;
+                    generateGraphAndMetrics(); // Regenerate if value clamped
+                }
+            }
+        };
         nodesInput.addEventListener('input', updateMaxSkip); // Use input for immediate max update
         updateMaxSkip();
     }
@@ -524,7 +524,7 @@ function visualizeGraph(graph, type, use3DLayout = false) {
                 // --- 3D Geometric Torus Layout --- (Unchanged)
                 const nodeSpacingFactor = NODE_RADIUS * 3.5; const minorCircumference = rows * nodeSpacingFactor; const minorRadius = Math.max(NODE_RADIUS * 1.5, minorCircumference / (2 * Math.PI)); const majorCircumference = cols * nodeSpacingFactor; const majorRadius = Math.max(minorRadius * 2.0, majorCircumference / (2 * Math.PI));
                 graph.nodes.forEach(node => { const r = node.row ?? 0; const c = node.col ?? 0; const majorAngle = (c / cols) * Math.PI * 2; const minorAngle = (r / rows) * Math.PI * 2; const x = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.cos(majorAngle); const y = (majorRadius + minorRadius * Math.cos(minorAngle)) * Math.sin(majorAngle); const z = minorRadius * Math.sin(minorAngle); nodePositions.set(node.id, new THREE.Vector3(x, y, z)); });
-                const viewDistance = (majorRadius + minorRadius) * 2.2; camera.position.set(0, minorRadius * 0.5 , viewDistance < 30 ? 30 : viewDistance);
+                const viewDistance = (majorRadius + minorRadius) * 2.2; camera.position.set(0, minorRadius * 0.5, viewDistance < 30 ? 30 : viewDistance);
             } else {
                 // --- 2D Grid Layout (for Torus) --- (Unchanged layout logic)
                 const gridSpacing = 3 * NODE_RADIUS; const totalWidth = (cols - 1) * gridSpacing; const totalHeight = (rows - 1) * gridSpacing;
@@ -532,7 +532,7 @@ function visualizeGraph(graph, type, use3DLayout = false) {
                 const camDist = Math.max(totalWidth, totalHeight, 20) * 1.5; camera.position.set(0, 0, camDist < 30 ? 30 : camDist);
             }
         }
-         // Add layout logic for other topologies here
+        // Add layout logic for other topologies here
     } // End if (n > 0) for layout
 
     // --- 2. Create Node Meshes ---
@@ -555,90 +555,176 @@ function visualizeGraph(graph, type, use3DLayout = false) {
     });
 
     // --- 3. Create Edge Meshes (Conditional Lines / Curves) ---
+    // --- 3. Create Edge Meshes (Rounded Rect Arcs or Lines) ---
     graph.edges.forEach(edge => {
         const pos1 = nodePositions.get(edge.source);
         const pos2 = nodePositions.get(edge.target);
         const node1 = nodeIdToData.get(edge.source);
         const node2 = nodeIdToData.get(edge.target);
-    
+
         if (pos1 && pos2 && node1 && node2) {
             let isWrapEdge = false;
-            let isHorizontalWrap = false; // Flag for horizontal wrap
-            let isVerticalWrap = false;   // Flag for vertical wrap
+            let isHorizontalWrap = false;
+            let isVerticalWrap = false;
             let geometry;
-            let lineMaterial = EDGE_MATERIAL; // Default
-    
-            // Check for wrap edge status specifically for Torus
-            // Ensure rows and cols are correctly determined earlier in visualizeGraph
+            let lineMaterial = EDGE_MATERIAL;
+
+            // Determine wrap type
             if (type === 'torus' && node1.hasOwnProperty('row') && node1.hasOwnProperty('col')) {
-                // Check for horizontal wrap (across columns)
                 if (cols > 1 && Math.abs(node1.col - node2.col) === cols - 1) {
-                    isWrapEdge = true;
-                    isHorizontalWrap = true;
+                    isWrapEdge = true; isHorizontalWrap = true;
                 }
-                // Check for vertical wrap (across rows)
                 if (rows > 1 && Math.abs(node1.row - node2.row) === rows - 1) {
-                    isWrapEdge = true;
-                    isVerticalWrap = true;
+                    isWrapEdge = true; isVerticalWrap = true;
+                    if (isHorizontalWrap) isHorizontalWrap = false; // Prioritize vertical if both? Adjust as needed.
                 }
             }
-    
-            // Decide geometry and material based on wrap status and layout mode
+
             if (isWrapEdge && type === 'torus' && !use3DLayout) {
-                // **** Draw Wrap Edge as CURVE in 2D Layout ****
-                lineMaterial = WRAP_EDGE_MATERIAL; // Use wrap color
-    
-                const midpoint = new THREE.Vector3().lerpVectors(pos1, pos2, 0.5);
-                const dist = pos1.distanceTo(pos2);
-    
-                // Calculate offset magnitude - adjust multiplier (e.g., 0.15) and max value (e.g., 10)
-                const offsetMagnitude = Math.min(Math.max(0.15, dist * 0.33), 2.75);
-    
-                let controlPointOffset = new THREE.Vector3();
-    
-                // Calculate offset direction based on wrap type
+                lineMaterial = WRAP_EDGE_MATERIAL;
+                const points = [];
+                // --- Define Shape Parameters ---
+                // Adjust cornerRadius to control the roundness and offset distance
+                // Maybe base it on NODE_RADIUS or grid spacing?
+                const cornerRadius = NODE_RADIUS * 2; // Example: Try adjusting this value
+                const numPointsPerArc = 10; // Segments per 90-degree corner
+
+                // Ensure pos1 and pos2 are ordered consistently for calculations
+                // (e.g., pos1 is always the 'left' or 'top' node of the pair)
+                let pStart = pos1.clone();
+                let pEnd = pos2.clone();
+
+                if (isHorizontalWrap && pos1.x > pos2.x) { [pStart, pEnd] = [pEnd, pStart]; }
+                if (isVerticalWrap && pos1.y < pos2.y) { [pStart, pEnd] = [pEnd, pStart]; } // Assuming Y decreases downwards
+
+
+                // --- Generate Points ---
                 if (isHorizontalWrap) {
-                    // Edge is roughly horizontal, curve it vertically (in Y)
-                    // Use a fixed direction (e.g., positive Y) or alternate based on position
-                    controlPointOffset.set(0, offsetMagnitude, 0); // Curve 'up'
-                     // Optional: Add a small Z offset for subtle depth
-                    // controlPointOffset.z = -offsetMagnitude * 0.2;
+                    // Rounded Rect Arc - Horizontal (Above/Below)
+                    // arcGoesPositive = true means arc goes above (positive Y offset)
+                    const arcGoesPositive = true; // Or alternate: (node1.row % 2 === 0);
+                    const yDirection = arcGoesPositive ? 1 : -1;
+
+                    // Calculate key points for the path
+                    const P1 = new THREE.Vector3(pStart.x + cornerRadius, pStart.y + cornerRadius * yDirection, pStart.z);
+                    const P2 = new THREE.Vector3(pEnd.x - cornerRadius, pEnd.y + cornerRadius * yDirection, pEnd.z);
+
+                    // Arc 1 Center and Angles (near pStart)
+                    const center1 = new THREE.Vector3(pStart.x + cornerRadius, pStart.y, pStart.z);
+                    const startAngle1 = Math.PI; // 180 deg
+                    const endAngle1 = Math.PI / 2; // 90 deg
+
+                    // Arc 2 Center and Angles (near pEnd)
+                    const center2 = new THREE.Vector3(pEnd.x - cornerRadius, pEnd.y, pEnd.z);
+                    const startAngle2 = Math.PI / 2; // 90 deg
+                    const endAngle2 = 0;         // 0 deg
+
+                    // Generate points for Arc 1
+                    for (let i = 0; i <= numPointsPerArc; i++) {
+                        const angle = startAngle1 + (endAngle1 - startAngle1) * (i / numPointsPerArc);
+                        points.push(new THREE.Vector3(
+                            center1.x + cornerRadius * Math.cos(angle),
+                            center1.y + cornerRadius * Math.sin(angle) * yDirection, // Apply direction
+                            center1.z
+                        ));
+                    }
+
+                    // Add the straight segment end point (P2)
+                    // The line geometry connects the last point of arc1 to P2 implicitly
+                    // unless P1 and P2 are the same, which they shouldn't be here.
+                    // We actually need the points *between* P1 and P2 for the line.
+                    // Let's recalculate the point generation slightly.
+
+                    points.length = 0; // Reset points array
+
+                    // Generate Arc 1 points (pStart up to P1)
+                    for (let i = 0; i <= numPointsPerArc; i++) {
+                        let angle = Math.PI - (Math.PI / 2) * (i / numPointsPerArc); // Angle from PI down to PI/2
+                        points.push(new THREE.Vector3(
+                            pStart.x + cornerRadius * (1 + Math.cos(angle)), // Center is (pStart.x + R, pStart.y)
+                            pStart.y + cornerRadius * Math.sin(angle) * yDirection,
+                            pStart.z
+                        ));
+                    }
+
+                    // Generate Straight Line points (P1 to P2) - optional if P1,P2 is enough
+                    // points.push(P1); // Ensure P1 is included if arc didn't land exactly
+                    points.push(P2); // Add P2 - Line connects last arc1 point to P2
+
+                    // Generate Arc 2 points (P2 down to pEnd)
+                    for (let i = 0; i <= numPointsPerArc; i++) {
+                        let angle = Math.PI / 2 - (Math.PI / 2) * (i / numPointsPerArc); // Angle from PI/2 down to 0
+                        points.push(new THREE.Vector3(
+                            pEnd.x - cornerRadius * (1 - Math.cos(angle)), // Center is (pEnd.x - R, pEnd.y)
+                            pEnd.y + cornerRadius * Math.sin(angle) * yDirection,
+                            pEnd.z
+                        ));
+                    }
+
+
                 } else if (isVerticalWrap) {
-                    // Edge is roughly vertical, curve it horizontally (in X)
-                    controlPointOffset.set(offsetMagnitude, 0, 0); // Curve 'right'
-                     // Optional: Add a small Z offset
-                    // controlPointOffset.z = -offsetMagnitude * 0.2;
-                } else {
-                     // Should not happen if isWrapEdge is true, but as a fallback:
-                     // Calculate perpendicular in XY plane
-                     const direction = pos2.clone().sub(pos1).normalize();
-                     controlPointOffset.set(-direction.y * offsetMagnitude, direction.x * offsetMagnitude, 0);
+                    // Rounded Rect Arc - Vertical (Left/Right)
+                    // arcGoesPositive = true means arc goes right (positive X offset)
+                    const arcGoesPositive = true; // Or alternate: (node1.col % 2 !== 0);
+                    const xDirection = arcGoesPositive ? 1 : -1;
+
+                    // Calculate key points
+                    const P1 = new THREE.Vector3(pStart.x + cornerRadius * xDirection, pStart.y - cornerRadius, pStart.z);
+                    const P2 = new THREE.Vector3(pEnd.x + cornerRadius * xDirection, pEnd.y + cornerRadius, pEnd.z);
+
+
+                    points.length = 0; // Reset points array
+
+                    // Generate Arc 1 points (pStart right/left to P1) - pStart is top node
+                    for (let i = 0; i <= numPointsPerArc; i++) {
+                        let angle = Math.PI / 2 - (Math.PI / 2) * (i / numPointsPerArc); // Angle from PI/2 down to 0
+                        points.push(new THREE.Vector3(
+                            pStart.x + cornerRadius * Math.cos(angle) * xDirection,
+                            pStart.y - cornerRadius * (1 - Math.sin(angle)), // Center is (pStart.x, pStart.y - R)
+                            pStart.z
+                        ));
+                    }
+
+                    // Generate Straight Line points (P1 to P2)
+                    points.push(P2); // Add P2
+
+                    // Generate Arc 2 points (P2 right/left to pEnd) - pEnd is bottom node
+                    for (let i = 0; i <= numPointsPerArc; i++) {
+                        let angle = 0 - (Math.PI / 2) * (i / numPointsPerArc); // Angle from 0 down to -PI/2
+                        points.push(new THREE.Vector3(
+                            pEnd.x + cornerRadius * Math.cos(angle) * xDirection,
+                            pEnd.y + cornerRadius * (1 + Math.sin(angle)), // Center is (pEnd.x, pEnd.y + R)
+                            pEnd.z
+                        ));
+                    }
                 }
-    
-    
-                // Calculate the final control point
-                const controlPoint = midpoint.clone().add(controlPointOffset);
-    
-                // Create Quadratic Bezier Curve
-                const curve = new THREE.QuadraticBezierCurve3(pos1, controlPoint, pos2);
-                const points = curve.getPoints(20); // Number of segments
-                geometry = new THREE.BufferGeometry().setFromPoints(points);
-    
+
+                // Create geometry from the generated points
+                if (points.length > 1) {
+                    geometry = new THREE.BufferGeometry().setFromPoints(points);
+                } else {
+                    // Fallback to straight line if arc generation failed
+                    console.warn("Failed to generate sufficient points for rounded rect arc. Drawing straight line.");
+                    geometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
+                }
+
             } else {
-                // **** Draw Straight Line ****
-                // (For non-wrap edges in 2D Torus, all edges in Mesh/Ring, all edges in 3D Torus)
+                // **** Draw Straight Line **** (Non-wrap, Mesh, Ring, 3D Torus)
                 geometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
-                // Optional: You could still color wrap edges differently in 3D if desired
-                // if (isWrapEdge && type === 'torus' && use3DLayout) {
-                //     lineMaterial = WRAP_EDGE_MATERIAL;
-                // }
+                if (isWrapEdge && type === 'torus' && use3DLayout) {
+                    lineMaterial = WRAP_EDGE_MATERIAL;
+                }
             }
-    
+
             // Create the line object
-            const line = new THREE.Line(geometry, lineMaterial);
-            scene.add(line);
-            edgeMeshes.push(line);
-    
+            if (geometry) {
+                const line = new THREE.Line(geometry, lineMaterial);
+                scene.add(line);
+                edgeMeshes.push(line);
+            } else {
+                console.warn(`Failed to create geometry for edge: ${edge.source} -> ${edge.target}`);
+            }
+
         } else {
             console.warn(`Could not find position or node data for edge: ${edge.source} -> ${edge.target}`);
         }
