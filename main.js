@@ -560,52 +560,89 @@ function visualizeGraph(graph, type, use3DLayout = false) {
         const pos2 = nodePositions.get(edge.target);
         const node1 = nodeIdToData.get(edge.source);
         const node2 = nodeIdToData.get(edge.target);
-
+    
         if (pos1 && pos2 && node1 && node2) {
             let isWrapEdge = false;
+            let isHorizontalWrap = false; // Flag for horizontal wrap
+            let isVerticalWrap = false;   // Flag for vertical wrap
             let geometry;
-            let lineMaterial = EDGE_MATERIAL; // Default to standard material and straight line
-
+            let lineMaterial = EDGE_MATERIAL; // Default
+    
             // Check for wrap edge status specifically for Torus
+            // Ensure rows and cols are correctly determined earlier in visualizeGraph
             if (type === 'torus' && node1.hasOwnProperty('row') && node1.hasOwnProperty('col')) {
-                 // Need rows/cols dimensions calculated earlier (ensure they are in scope)
-                 if (cols > 1 && Math.abs(node1.col - node2.col) === cols - 1) isWrapEdge = true; // Horizontal wrap
-                 if (rows > 1 && Math.abs(node1.row - node2.row) === rows - 1) isWrapEdge = true; // Vertical wrap
+                // Check for horizontal wrap (across columns)
+                if (cols > 1 && Math.abs(node1.col - node2.col) === cols - 1) {
+                    isWrapEdge = true;
+                    isHorizontalWrap = true;
+                }
+                // Check for vertical wrap (across rows)
+                if (rows > 1 && Math.abs(node1.row - node2.row) === rows - 1) {
+                    isWrapEdge = true;
+                    isVerticalWrap = true;
+                }
             }
-
+    
             // Decide geometry and material based on wrap status and layout mode
             if (isWrapEdge && type === 'torus' && !use3DLayout) {
                 // **** Draw Wrap Edge as CURVE in 2D Layout ****
                 lineMaterial = WRAP_EDGE_MATERIAL; // Use wrap color
-
-                // Calculate midpoint and curve height
+    
                 const midpoint = new THREE.Vector3().lerpVectors(pos1, pos2, 0.5);
                 const dist = pos1.distanceTo(pos2);
-                // Curve height proportional to distance, with min/max bounds. Adjust multiplier (0.15) as needed.
-                const curveHeight = Math.min(Math.max(1.5, dist * 0.45), 40);
-
-                // Simple Z offset for curve control point (lifts curve off the XY plane)
-                const controlPoint = midpoint.clone().add(new THREE.Vector3(0, 0, -curveHeight));
-
+    
+                // Calculate offset magnitude - adjust multiplier (e.g., 0.15) and max value (e.g., 10)
+                const offsetMagnitude = Math.min(Math.max(0.15, dist * 0.33), 2.75);
+    
+                let controlPointOffset = new THREE.Vector3();
+    
+                // Calculate offset direction based on wrap type
+                if (isHorizontalWrap) {
+                    // Edge is roughly horizontal, curve it vertically (in Y)
+                    // Use a fixed direction (e.g., positive Y) or alternate based on position
+                    controlPointOffset.set(0, offsetMagnitude, 0); // Curve 'up'
+                     // Optional: Add a small Z offset for subtle depth
+                    // controlPointOffset.z = -offsetMagnitude * 0.2;
+                } else if (isVerticalWrap) {
+                    // Edge is roughly vertical, curve it horizontally (in X)
+                    controlPointOffset.set(offsetMagnitude, 0, 0); // Curve 'right'
+                     // Optional: Add a small Z offset
+                    // controlPointOffset.z = -offsetMagnitude * 0.2;
+                } else {
+                     // Should not happen if isWrapEdge is true, but as a fallback:
+                     // Calculate perpendicular in XY plane
+                     const direction = pos2.clone().sub(pos1).normalize();
+                     controlPointOffset.set(-direction.y * offsetMagnitude, direction.x * offsetMagnitude, 0);
+                }
+    
+    
+                // Calculate the final control point
+                const controlPoint = midpoint.clone().add(controlPointOffset);
+    
                 // Create Quadratic Bezier Curve
                 const curve = new THREE.QuadraticBezierCurve3(pos1, controlPoint, pos2);
-                const points = curve.getPoints(20); // Number of segments for the curve line
+                const points = curve.getPoints(20); // Number of segments
                 geometry = new THREE.BufferGeometry().setFromPoints(points);
-
+    
             } else {
                 // **** Draw Straight Line ****
                 // (For non-wrap edges in 2D Torus, all edges in Mesh/Ring, all edges in 3D Torus)
                 geometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
-                // Material remains EDGE_MATERIAL (gray) unless we decide to color wraps in 3D too
+                // Optional: You could still color wrap edges differently in 3D if desired
+                // if (isWrapEdge && type === 'torus' && use3DLayout) {
+                //     lineMaterial = WRAP_EDGE_MATERIAL;
+                // }
             }
-
+    
             // Create the line object
             const line = new THREE.Line(geometry, lineMaterial);
             scene.add(line);
             edgeMeshes.push(line);
-
-        } else { console.warn(/* ... could not find positions ... */); }
-    });
+    
+        } else {
+            console.warn(`Could not find position or node data for edge: ${edge.source} -> ${edge.target}`);
+        }
+    }); // End of graph.edges.forEach
 
     // --- Final Adjustments ---
     controls.target.set(0, 0, 0); // Reset target
