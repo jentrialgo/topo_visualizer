@@ -3,6 +3,9 @@ let scene, camera, renderer, controls;
 let graphData = { nodes: [], edges: [] };
 let nodeMeshes = [];
 let edgeMeshes = [];
+let raycaster, mouse;
+let highlightedElements = { nodes: [], edges: [] }; // To store highlighted objects
+let adjacencyList = new Map(); // Store adjacency list for reuse
 
 // --- DOM Elements ---
 const container = document.getElementById('container');
@@ -21,6 +24,25 @@ const NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x00aaff, roughnes
 const EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
 const WRAP_EDGE_COLOR = 0xffaa00; // Orange for wrap edges (choose any contrasting color)
 const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
+
+// --- Highlighting Constants ---
+const HIGHLIGHT_NODE_COLOR = 0xff4444; // Red for source/target
+const PATH_NODE_COLOR = 0xffaa00;     // Orange for intermediate path nodes
+const PATH_EDGE_COLOR = 0xffdd44;     // Yellow for path edges
+
+// Create highlight materials once
+const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: HIGHLIGHT_NODE_COLOR, roughness: 0.5, metalness: 0.2 });
+const PATH_NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: PATH_NODE_COLOR, roughness: 0.5, metalness: 0.2 });
+const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
+
+// Keep original materials accessible
+const ORIGINAL_NODE_MATERIAL = NODE_MATERIAL;
+const ORIGINAL_EDGE_MATERIAL = EDGE_MATERIAL;
+const ORIGINAL_WRAP_EDGE_MATERIAL = WRAP_EDGE_MATERIAL; // If using wrap edges
+
+// Map to quickly find meshes/lines by ID or edge key
+let nodeMeshMap = new Map();
+let edgeMeshMap = new Map();
 
 // --- Initialization ---
 function init() {
@@ -43,6 +65,15 @@ function setupThreeJS() {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
+
+    // --- Raycasting Setup ---
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+
+    // --- Event Listeners ---
+    renderer.domElement.addEventListener('click', onNodeClick, false);
+    // Add listener to clear highlights on background click
+    renderer.domElement.addEventListener('pointerdown', onPointerDown, false); // Use pointerdown for potentially easier background detection
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -128,6 +159,7 @@ function updateParameterInputs() {
                 }
             }
         };
+        nodesInput.removeEventListener('input', updateMaxSkip); // Remove any existing listener
         nodesInput.addEventListener('input', updateMaxSkip); // Use input for immediate max update
         updateMaxSkip();
     }
@@ -192,6 +224,40 @@ function addCheckboxInput(id, labelText, defaultChecked) {
     paramsContainer.appendChild(div);
 }
 
+function onPointerDown(event) {
+    // Check if the click was on the background (not on a node)
+    mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+    mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(nodeMeshes);
+
+    if (intersects.length === 0) {
+        // Clicked on background
+        clearHighlights();
+    }
+}
+
+function onNodeClick(event) {
+    event.preventDefault();
+
+    mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+    mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(nodeMeshes); // Check intersection with node meshes
+
+    if (intersects.length > 0) {
+        const clickedMesh = intersects[0].object;
+        if (clickedMesh.userData && clickedMesh.userData.nodeId !== undefined) {
+            const sourceNodeId = clickedMesh.userData.nodeId;
+            console.log(`Clicked Node ID: ${sourceNodeId}`);
+            highlightDiameterPath(sourceNodeId);
+        }
+    }
+    // Note: We don't clear highlights here; that's handled by onPointerDown hitting the background
+}
+
 // --- Graph Generation & Metrics ---
 function generateGraphAndMetrics() {
     clearVisualization();
@@ -230,8 +296,18 @@ function generateGraphAndMetrics() {
     }
     // --- End Generation ---
 
+    // --- Calculate Adjacency List (and store it) ---
+    adjacencyList = new Map();
+    graphData.nodes.forEach(node => adjacencyList.set(node.id, []));
+    graphData.edges.forEach(edge => {
+        // Ensure both directions are added for BFS
+        adjacencyList.get(edge.source)?.push(edge.target);
+        adjacencyList.get(edge.target)?.push(edge.source);
+    });
+
     // Calculate Metrics
-    const metrics = calculateGraphMetrics(graphData);
+    // Pass adjacencyList to the metrics function if needed, or have it use the global one
+    const metrics = calculateGraphMetrics(graphData, adjacencyList); // Modify if necessary
 
     // Update UI
     diameterSpan.textContent = metrics.diameter === Infinity ? 'Disconnected' : metrics.diameter;
@@ -439,19 +515,10 @@ function generateHypercube(d) {
 }
 
 // --- Metric Calculation Functions ---
-function calculateGraphMetrics(graph) {
+function calculateGraphMetrics(graph, adj) {
     const n = graph.nodes.length;
     // Handle trivial cases
     if (n <= 1) return { diameter: 0, avgPathLength: 0, isConnected: true };
-
-    // Build Adjacency List (assuming undirected for metrics)
-    const adj = new Map();
-    graph.nodes.forEach(node => adj.set(node.id, []));
-    graph.edges.forEach(edge => {
-        // Ensure both directions are added for BFS on undirected graph
-        adj.get(edge.source)?.push(edge.target);
-        adj.get(edge.target)?.push(edge.source);
-    });
 
     let maxDistance = 0;         // Stores the diameter
     let totalPathLengthSum = 0;  // Sum of all shortest paths
@@ -461,7 +528,7 @@ function calculateGraphMetrics(graph) {
 
     for (let i = 0; i < n; i++) {
         const startNodeId = graph.nodes[i].id;
-        const distances = bfs(startNodeId, adj, graph.nodes); // Use existing BFS helper
+        const { distances } = bfs(startNodeId, adj, graph.nodes); // Only need distances here
         let currentMax = 0;        // Max distance from this start node
         let reachableCount = 0;    // Nodes reachable from this start node
 
@@ -518,7 +585,11 @@ function calculateGraphMetrics(graph) {
 // --- BFS Helper function (remains the same) ---
 function bfs(startNodeId, adj, allNodes) {
     const distances = new Map();
-    allNodes.forEach(node => distances.set(node.id, Infinity));
+    const predecessors = new Map(); // To store path predecessors
+    allNodes.forEach(node => {
+        distances.set(node.id, Infinity);
+        predecessors.set(node.id, null); // Initialize predecessors
+    });
     const queue = [];
 
     distances.set(startNodeId, 0);
@@ -532,11 +603,12 @@ function bfs(startNodeId, adj, allNodes) {
         for (const v of neighbors) {
             if (distances.get(v) === Infinity) {
                 distances.set(v, distances.get(u) + 1);
+                predecessors.set(v, u); // Set predecessor for path reconstruction
                 queue.push(v);
             }
         }
     }
-    return distances;
+    return { distances, predecessors };
 }
 
 
@@ -557,6 +629,156 @@ function clearVisualization() {
     // Dispose shared materials if they are no longer needed by any object
     // NODE_MATERIAL.dispose();
     // EDGE_MATERIAL.dispose();
+}
+
+// --- Highlighting and Path Finding ---
+
+function clearHighlights() {
+    // Reset node materials
+    highlightedElements.nodes.forEach(mesh => {
+        mesh.material = ORIGINAL_NODE_MATERIAL;
+    });
+
+    // Reset edge materials/colors
+    highlightedElements.edges.forEach(lineInfo => {
+        // Check if the line still exists and has geometry/material
+        if (lineInfo.line && lineInfo.line.material) {
+            // Restore original color - safer than swapping materials if some edges are different
+            lineInfo.line.material.color.set(lineInfo.originalColor);
+            // If you were swapping materials entirely:
+            // lineInfo.line.material = lineInfo.originalMaterial;
+        }
+    });
+
+    highlightedElements = { nodes: [], edges: [] }; // Clear the tracking arrays
+}
+
+function reconstructPath(source, target, predecessors) {
+    const path = [target];
+    let current = target;
+    let safety = 0; // Prevent infinite loops in case of error
+    const maxPathLength = predecessors.size;
+
+    while (current !== source && safety < maxPathLength) {
+        const prev = predecessors.get(current);
+        if (prev === null || prev === undefined) {
+            console.error(`Error reconstructing path: No predecessor found for node ${current}`);
+            return null; // Path reconstruction failed
+        }
+        path.unshift(prev);
+        current = prev;
+        safety++;
+    }
+
+    if (current !== source) {
+        console.error(`Error reconstructing path: Loop detected or source not reached.`);
+        return null;
+    }
+
+    return path; // Array of node IDs from source to target
+}
+
+function highlightDiameterPath(sourceNodeId) {
+    clearHighlights(); // Clear previous highlights first
+
+    if (!adjacencyList || adjacencyList.size === 0) {
+        console.warn("Adjacency list not available for highlighting.");
+        return;
+    }
+
+    // 1. Run BFS from the clicked node
+    const { distances, predecessors } = bfs(sourceNodeId, adjacencyList, graphData.nodes);
+
+    // 2. Find the maximum distance (eccentricity) and the furthest nodes
+    let maxDistance = 0;
+    distances.forEach(dist => {
+        if (dist !== Infinity && dist > maxDistance) {
+            maxDistance = dist;
+        }
+    });
+
+    if (maxDistance === 0 && graphData.nodes.length > 1) {
+        console.log("Node is isolated or graph is disconnected from this node.");
+        // Highlight just the source node
+        const sourceMesh = nodeMeshMap.get(sourceNodeId);
+        if (sourceMesh) {
+            sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
+            highlightedElements.nodes.push(sourceMesh);
+        }
+        return;
+    }
+    if (maxDistance === 0 && graphData.nodes.length <= 1) {
+        console.log("Single node graph.");
+        const sourceMesh = nodeMeshMap.get(sourceNodeId);
+        if (sourceMesh) {
+            sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
+            highlightedElements.nodes.push(sourceMesh);
+        }
+        return;
+    }
+
+
+    const furthestNodesIds = [];
+    distances.forEach((dist, nodeId) => {
+        if (dist === maxDistance) {
+            furthestNodesIds.push(nodeId);
+        }
+    });
+
+    console.log(`Max distance from ${sourceNodeId}: ${maxDistance}`);
+    console.log(`Furthest node(s): ${furthestNodesIds.join(', ')}`);
+
+    // 3. Reconstruct and highlight paths to all furthest nodes
+    const sourceMesh = nodeMeshMap.get(sourceNodeId);
+    if (sourceMesh) {
+        sourceMesh.material = HIGHLIGHT_NODE_MATERIAL; // Highlight source node
+        highlightedElements.nodes.push(sourceMesh);
+    }
+
+    furthestNodesIds.forEach(targetNodeId => {
+        const pathNodeIds = reconstructPath(sourceNodeId, targetNodeId, predecessors);
+
+        if (pathNodeIds) {
+            console.log(`Path to ${targetNodeId}: ${pathNodeIds.join(' -> ')}`);
+            // Highlight nodes and edges along this path
+            for (let i = 0; i < pathNodeIds.length; i++) {
+                const nodeId = pathNodeIds[i];
+                const nodeMesh = nodeMeshMap.get(nodeId);
+                if (nodeMesh) {
+                    // Set material based on position in path
+                    if (i === 0) { // Source node (already highlighted)
+                        // nodeMesh.material = HIGHLIGHT_NODE_MATERIAL;
+                    } else if (i === pathNodeIds.length - 1) { // Target node
+                        nodeMesh.material = HIGHLIGHT_NODE_MATERIAL;
+                    } else { // Intermediate node
+                        nodeMesh.material = PATH_NODE_MATERIAL;
+                    }
+                    // Add to highlighted list *if not already added*
+                    if (!highlightedElements.nodes.includes(nodeMesh)) {
+                        highlightedElements.nodes.push(nodeMesh);
+                    }
+                }
+
+                // Highlight edge connecting to the next node in the path
+                if (i < pathNodeIds.length - 1) {
+                    const u = pathNodeIds[i];
+                    const v = pathNodeIds[i + 1];
+                    const edgeKey = `${Math.min(u, v)}-${Math.max(u, v)}`;
+                    const edgeLine = edgeMeshMap.get(edgeKey);
+
+                    if (edgeLine && edgeLine.material) {
+                        // Store original color before changing
+                        const originalColor = edgeLine.material.color.clone();
+                        edgeLine.material.color.set(PATH_EDGE_COLOR);
+                        // Add to highlighted list *if not already added*
+                        if (!highlightedElements.edges.some(item => item.line === edgeLine)) {
+                            highlightedElements.edges.push({ line: edgeLine, originalColor: originalColor });
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
@@ -667,6 +889,10 @@ function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
         }  // Add layout logic for other topologies here
     } // End if (n > 0) for layout
 
+    // --- Reset Helper Maps ---
+    nodeMeshMap.clear();
+    edgeMeshMap.clear();
+
     // --- 2. Create Node Meshes ---
     graph.nodes.forEach(node => {
         try { // Add try-catch for detailed error within loop
@@ -679,6 +905,10 @@ function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
                 console.warn(`Position not found for node ${node.id} during mesh creation.`);
                 mesh.position.set(0, 0, 0);
             }
+
+            mesh.userData = { nodeId: node.id };
+            nodeMeshMap.set(node.id, mesh);
+
             scene.add(mesh);
             nodeMeshes.push(mesh);
         } catch (error) {
@@ -688,7 +918,6 @@ function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
 
     // Adjust camera Z position, ensuring minimum distance
     camera.position.z = Math.max(30, camDist); // Use calculated camDist
-
 
     // --- 3. Create Edge Meshes (Conditional Lines / Curves) ---
     graph.edges.forEach(edge => {
@@ -853,7 +1082,15 @@ function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
 
             // Create the line object
             if (geometry) {
-                const line = new THREE.Line(geometry, lineMaterial);
+                // Ensure we use a unique material instance per line if changing color directly
+                const currentLineMaterial = lineMaterial.clone(); // Clone to avoid changing shared materials
+
+                const line = new THREE.Line(geometry, currentLineMaterial);
+
+                line.userData = { source: edge.source, target: edge.target };
+                const edgeKey = `${Math.min(edge.source, edge.target)}-${Math.max(edge.source, edge.target)}`;
+                edgeMeshMap.set(edgeKey, line); // Store line reference
+
                 scene.add(line);
                 edgeMeshes.push(line);
             } else {
