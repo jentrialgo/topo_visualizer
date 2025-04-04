@@ -5,6 +5,7 @@ let nodeMeshes = [];
 let edgeMeshes = [];
 let raycaster, mouse;
 let highlightedElements = { nodes: [], edges: [] }; // To store highlighted objects
+let activeHighlightTimeouts = []; // Stores IDs of active animation timeouts
 let adjacencyList = new Map(); // Store adjacency list for reuse
 
 // --- DOM Elements ---
@@ -634,19 +635,23 @@ function clearVisualization() {
 // --- Highlighting and Path Finding ---
 
 function clearHighlights() {
+    // --- Cancel pending animations ---
+    activeHighlightTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    activeHighlightTimeouts = []; // Clear the array
+
     // Reset node materials
     highlightedElements.nodes.forEach(mesh => {
-        mesh.material = ORIGINAL_NODE_MATERIAL;
+        // Ensure mesh still exists and hasn't been disposed
+        if (mesh && mesh.material) {
+            mesh.material = ORIGINAL_NODE_MATERIAL;
+        }
     });
 
     // Reset edge materials/colors
     highlightedElements.edges.forEach(lineInfo => {
-        // Check if the line still exists and has geometry/material
         if (lineInfo.line && lineInfo.line.material) {
-            // Restore original color - safer than swapping materials if some edges are different
+            // Restore original color
             lineInfo.line.material.color.set(lineInfo.originalColor);
-            // If you were swapping materials entirely:
-            // lineInfo.line.material = lineInfo.originalMaterial;
         }
     });
 
@@ -679,27 +684,22 @@ function reconstructPath(source, target, predecessors) {
 }
 
 function highlightDiameterPath(sourceNodeId) {
-    clearHighlights(); // Clear previous highlights first
+    clearHighlights(); // Clear previous state & cancel animations
 
-    if (!adjacencyList || adjacencyList.size === 0) {
-        console.warn("Adjacency list not available for highlighting.");
-        return;
-    }
+    if (!adjacencyList || adjacencyList.size === 0) return;
 
-    // 1. Run BFS from the clicked node
+    // 1. BFS
     const { distances, predecessors } = bfs(sourceNodeId, adjacencyList, graphData.nodes);
 
-    // 2. Find the maximum distance (eccentricity) and the furthest nodes
+    // 2. Find Max Distance & Furthest Nodes
     let maxDistance = 0;
     distances.forEach(dist => {
-        if (dist !== Infinity && dist > maxDistance) {
-            maxDistance = dist;
-        }
+        if (dist !== Infinity && dist > maxDistance) maxDistance = dist;
     });
 
-    if (maxDistance === 0 && graphData.nodes.length > 1) {
-        console.log("Node is isolated or graph is disconnected from this node.");
-        // Highlight just the source node
+    // Handle edge cases (single node, disconnected)
+    if (maxDistance === 0) {
+        console.log("Node is isolated, single, or disconnected.");
         const sourceMesh = nodeMeshMap.get(sourceNodeId);
         if (sourceMesh) {
             sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
@@ -707,78 +707,91 @@ function highlightDiameterPath(sourceNodeId) {
         }
         return;
     }
-    if (maxDistance === 0 && graphData.nodes.length <= 1) {
-        console.log("Single node graph.");
-        const sourceMesh = nodeMeshMap.get(sourceNodeId);
-        if (sourceMesh) {
-            sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
-            highlightedElements.nodes.push(sourceMesh);
-        }
-        return;
-    }
-
 
     const furthestNodesIds = [];
     distances.forEach((dist, nodeId) => {
-        if (dist === maxDistance) {
-            furthestNodesIds.push(nodeId);
-        }
+        if (dist === maxDistance) furthestNodesIds.push(nodeId);
     });
 
     console.log(`Max distance from ${sourceNodeId}: ${maxDistance}`);
     console.log(`Furthest node(s): ${furthestNodesIds.join(', ')}`);
 
-    // 3. Reconstruct and highlight paths to all furthest nodes
+    // 3. Highlight Source Node Immediately
     const sourceMesh = nodeMeshMap.get(sourceNodeId);
     if (sourceMesh) {
-        sourceMesh.material = HIGHLIGHT_NODE_MATERIAL; // Highlight source node
-        highlightedElements.nodes.push(sourceMesh);
+        sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
+        // Add source mesh to highlightedElements *only once*
+        if (!highlightedElements.nodes.includes(sourceMesh)) {
+            highlightedElements.nodes.push(sourceMesh);
+        }
+    } else {
+        console.error("Source mesh not found!");
+        return; // Cannot proceed without source mesh
     }
+
+
+    // 4. Trigger Animation for each path
+    const stepDelay = 150; // Milliseconds between animation steps - ADJUST AS NEEDED
 
     furthestNodesIds.forEach(targetNodeId => {
         const pathNodeIds = reconstructPath(sourceNodeId, targetNodeId, predecessors);
-
-        if (pathNodeIds) {
-            console.log(`Path to ${targetNodeId}: ${pathNodeIds.join(' -> ')}`);
-            // Highlight nodes and edges along this path
-            for (let i = 0; i < pathNodeIds.length; i++) {
-                const nodeId = pathNodeIds[i];
-                const nodeMesh = nodeMeshMap.get(nodeId);
-                if (nodeMesh) {
-                    // Set material based on position in path
-                    if (i === 0) { // Source node (already highlighted)
-                        // nodeMesh.material = HIGHLIGHT_NODE_MATERIAL;
-                    } else if (i === pathNodeIds.length - 1) { // Target node
-                        nodeMesh.material = HIGHLIGHT_NODE_MATERIAL;
-                    } else { // Intermediate node
-                        nodeMesh.material = PATH_NODE_MATERIAL;
-                    }
-                    // Add to highlighted list *if not already added*
-                    if (!highlightedElements.nodes.includes(nodeMesh)) {
-                        highlightedElements.nodes.push(nodeMesh);
-                    }
-                }
-
-                // Highlight edge connecting to the next node in the path
-                if (i < pathNodeIds.length - 1) {
-                    const u = pathNodeIds[i];
-                    const v = pathNodeIds[i + 1];
-                    const edgeKey = `${Math.min(u, v)}-${Math.max(u, v)}`;
-                    const edgeLine = edgeMeshMap.get(edgeKey);
-
-                    if (edgeLine && edgeLine.material) {
-                        // Store original color before changing
-                        const originalColor = edgeLine.material.color.clone();
-                        edgeLine.material.color.set(PATH_EDGE_COLOR);
-                        // Add to highlighted list *if not already added*
-                        if (!highlightedElements.edges.some(item => item.line === edgeLine)) {
-                            highlightedElements.edges.push({ line: edgeLine, originalColor: originalColor });
-                        }
-                    }
-                }
-            }
+        if (pathNodeIds && pathNodeIds.length > 1) { // Ensure path exists and has > 1 node
+            console.log(`Animating path to ${targetNodeId}: ${pathNodeIds.join(' -> ')}`);
+            animatePathHighlight(pathNodeIds, stepDelay);
+        } else if (pathNodeIds) {
+            // Path has only the source node, make sure target (which is source) is red
+            if (sourceMesh) sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
         }
     });
+}
+
+function animatePathHighlight(pathNodeIds, stepDelay) {
+    // Start from step 1 (edge between node 0 and 1, and node 1 itself)
+    for (let i = 1; i < pathNodeIds.length; i++) {
+        const prevNodeId = pathNodeIds[i - 1];
+        const currentNodeId = pathNodeIds[i];
+        const isLastNode = (i === pathNodeIds.length - 1);
+
+        // Schedule the highlight for this step
+        const timeoutId = setTimeout(() => {
+            // --- Highlight Current Node ---
+            const nodeMesh = nodeMeshMap.get(currentNodeId);
+            if (nodeMesh) {
+                // Use highlight color for the final node, path color otherwise
+                nodeMesh.material = isLastNode ? HIGHLIGHT_NODE_MATERIAL : PATH_NODE_MATERIAL;
+                // Add to highlighted list if not already there (might be added by another concurrent path)
+                if (!highlightedElements.nodes.includes(nodeMesh)) {
+                    highlightedElements.nodes.push(nodeMesh);
+                }
+            }
+
+            // --- Highlight Edge Leading to Current Node ---
+            const edgeKey = `${Math.min(prevNodeId, currentNodeId)}-${Math.max(prevNodeId, currentNodeId)}`;
+            const edgeLine = edgeMeshMap.get(edgeKey);
+
+            if (edgeLine && edgeLine.material) {
+                // Check if this edge is already being highlighted (by another path)
+                // Store original color only if it's not already highlighted
+                let existingHighlight = highlightedElements.edges.find(item => item.line === edgeLine);
+                if (!existingHighlight) {
+                    const originalColor = edgeLine.material.color.clone(); // Get color *before* changing it
+                    highlightedElements.edges.push({ line: edgeLine, originalColor: originalColor });
+                    edgeLine.material.color.set(PATH_EDGE_COLOR); // Set highlight color
+                } else {
+                    // Already highlighted, ensure it has the path color
+                    edgeLine.material.color.set(PATH_EDGE_COLOR);
+                }
+            }
+
+            // Optional: Clean up this specific timeout ID from the active list
+            // (Alternatively, rely on the global clear in clearHighlights)
+            // const index = activeHighlightTimeouts.indexOf(timeoutId);
+            // if (index > -1) activeHighlightTimeouts.splice(index, 1);
+
+        }, i * stepDelay); // Delay increases for each step
+
+        activeHighlightTimeouts.push(timeoutId); // Track the timeout
+    }
 }
 
 function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
