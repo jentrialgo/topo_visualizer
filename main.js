@@ -648,11 +648,8 @@ function clearHighlights() {
     });
 
     // Reset edge materials/colors
-    highlightedElements.edges.forEach(lineInfo => {
-        if (lineInfo.line && lineInfo.line.material) {
-            // Restore original color
-            lineInfo.line.material.color.set(lineInfo.originalColor);
-        }
+    highlightedElements.edges.forEach(line => {
+        line.material = ORIGINAL_EDGE_MATERIAL; // Reset to original material
     });
 
     highlightedElements = { nodes: [], edges: [] }; // Clear the tracking arrays
@@ -736,7 +733,6 @@ function highlightDiameterPath(sourceNodeId) {
     furthestNodesIds.forEach(targetNodeId => {
         const pathNodeIds = reconstructPath(sourceNodeId, targetNodeId, predecessors);
         if (pathNodeIds && pathNodeIds.length > 1) { // Ensure path exists and has > 1 node
-            console.log(`Animating path to ${targetNodeId}: ${pathNodeIds.join(' -> ')}`);
             animatePathHighlight(pathNodeIds, stepDelay);
         } else if (pathNodeIds) {
             // Path has only the source node, make sure target (which is source) is red
@@ -745,53 +741,111 @@ function highlightDiameterPath(sourceNodeId) {
     });
 }
 
+// --- Advanced Plasma Effect with Lightning-like Appearance ---
+function createLightningPlasmaMaterial() {
+    return new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            color1: { value: new THREE.Color(0x00ffff) }, // Cyan
+            color2: { value: new THREE.Color(0xffffff) }, // White
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform vec3 color1;
+            uniform vec3 color2;
+            varying vec2 vUv;
+
+            // Simple noise function for lightning effect
+            float noise(vec2 p) {
+                return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+
+            void main() {
+                // Create a moving noise pattern
+                float n = noise(vUv * 10.0 + vec2(time * 2.0, 0.0));
+                n = smoothstep(0.4, 0.6, n); // Sharpen the noise for a lightning effect
+
+                // Interpolate between two colors based on the noise
+                vec3 plasmaColor = mix(color1, color2, n);
+
+                // Add a glow effect
+                float glow = 0.5 + 0.5 * sin(10.0 * vUv.x - time * 5.0);
+                plasmaColor *= glow;
+
+                gl_FragColor = vec4(plasmaColor, 1.0);
+            }
+        `,
+        transparent: true,
+    });
+}
+
+function animateLightningPlasmaFlow(pathNodeIds) {
+    const plasmaSpeed = 0.05; // Speed of the plasma flow
+
+    pathNodeIds.forEach((nodeId, index) => {
+        if (index === 0) return; // Skip the first node (no edge leading to it)
+
+        const prevNodeId = pathNodeIds[index - 1];
+        const edgeKey = `${Math.min(prevNodeId, nodeId)}-${Math.max(prevNodeId, nodeId)}`;
+        const edgeLine = edgeMeshMap.get(edgeKey);
+
+        if (edgeLine && edgeLine.material instanceof THREE.ShaderMaterial) {
+            const material = edgeLine.material;
+
+            // Animate the plasma effect
+            function updatePlasma() {
+                material.uniforms.time.value += plasmaSpeed;
+                material.needsUpdate = true;
+                requestAnimationFrame(updatePlasma);
+            }
+
+            updatePlasma();
+        }
+    });
+}
+
+// Update animatePathHighlight to include lightning plasma effect
 function animatePathHighlight(pathNodeIds, stepDelay) {
-    // Start from step 1 (edge between node 0 and 1, and node 1 itself)
     for (let i = 1; i < pathNodeIds.length; i++) {
         const prevNodeId = pathNodeIds[i - 1];
         const currentNodeId = pathNodeIds[i];
         const isLastNode = (i === pathNodeIds.length - 1);
 
-        // Schedule the highlight for this step
         const timeoutId = setTimeout(() => {
-            // --- Highlight Current Node ---
             const nodeMesh = nodeMeshMap.get(currentNodeId);
             if (nodeMesh) {
-                // Use highlight color for the final node, path color otherwise
                 nodeMesh.material = isLastNode ? HIGHLIGHT_NODE_MATERIAL : PATH_NODE_MATERIAL;
-                // Add to highlighted list if not already there (might be added by another concurrent path)
                 if (!highlightedElements.nodes.includes(nodeMesh)) {
                     highlightedElements.nodes.push(nodeMesh);
                 }
             }
 
-            // --- Highlight Edge Leading to Current Node ---
             const edgeKey = `${Math.min(prevNodeId, currentNodeId)}-${Math.max(prevNodeId, currentNodeId)}`;
             const edgeLine = edgeMeshMap.get(edgeKey);
 
-            if (edgeLine && edgeLine.material) {
-                // Check if this edge is already being highlighted (by another path)
-                // Store original color only if it's not already highlighted
+            if (edgeLine) {
                 let existingHighlight = highlightedElements.edges.find(item => item.line === edgeLine);
                 if (!existingHighlight) {
-                    const originalColor = edgeLine.material.color.clone(); // Get color *before* changing it
-                    highlightedElements.edges.push({ line: edgeLine, originalColor: originalColor });
-                    edgeLine.material.color.set(PATH_EDGE_COLOR); // Set highlight color
-                } else {
-                    // Already highlighted, ensure it has the path color
-                    edgeLine.material.color.set(PATH_EDGE_COLOR);
+                    highlightedElements.edges.push(edgeLine);
                 }
+
+                // Add lightning plasma material for energy flow
+                edgeLine.material = createLightningPlasmaMaterial();
             }
+        }, i * stepDelay);
 
-            // Optional: Clean up this specific timeout ID from the active list
-            // (Alternatively, rely on the global clear in clearHighlights)
-            // const index = activeHighlightTimeouts.indexOf(timeoutId);
-            // if (index > -1) activeHighlightTimeouts.splice(index, 1);
-
-        }, i * stepDelay); // Delay increases for each step
-
-        activeHighlightTimeouts.push(timeoutId); // Track the timeout
+        activeHighlightTimeouts.push(timeoutId);
     }
+
+    // Start lightning plasma flow animation after highlighting
+    setTimeout(() => animateLightningPlasmaFlow(pathNodeIds), pathNodeIds.length * stepDelay);
 }
 
 function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
