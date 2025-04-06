@@ -7,6 +7,7 @@ let raycaster, mouse;
 let highlightedElements = { nodes: [], edges: [] }; // To store highlighted objects
 let activeHighlightTimeouts = []; // Stores IDs of active animation timeouts
 let adjacencyList = new Map(); // Store adjacency list for reuse
+let activeLightningBolts = []; // Store active lightning bolt groups
 
 // --- DOM Elements ---
 const container = document.getElementById('container');
@@ -653,6 +654,7 @@ function clearHighlights() {
     });
 
     highlightedElements = { nodes: [], edges: [] }; // Clear the tracking arrays
+    clearActiveLightningBolts(); // Clear active lightning bolts
 }
 
 function reconstructPath(source, target, predecessors) {
@@ -680,23 +682,129 @@ function reconstructPath(source, target, predecessors) {
     return path; // Array of node IDs from source to target
 }
 
+function createAnimatedLightningBolt(source, target, duration = 1500) {
+    const group = new THREE.Group(); // Group to hold multiple rays
+
+    const rayCount = 5; // Number of rays per lightning bolt
+    const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 });
+
+    const bolts = [];
+
+    for (let i = 0; i < rayCount; i++) {
+        const boltMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const boltGeometry = new THREE.BufferGeometry();
+
+        const points = generateLightningPath(source, target);
+        boltGeometry.setFromPoints(points);
+
+        const bolt = new THREE.Line(boltGeometry, boltMaterial);
+        group.add(bolt);
+        bolts.push({ bolt, boltGeometry });
+    }
+
+    const glowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.copy(source);
+    group.add(glow);
+
+    scene.add(group);
+
+    // Animate the lightning bolts
+    const startTime = performance.now();
+
+    function animateBolts() {
+        const elapsedTime = performance.now() - startTime;
+
+        if (elapsedTime > duration) {
+            // Remove the group after the duration
+            scene.remove(group);
+            bolts.forEach(({ bolt, boltGeometry }) => {
+                boltGeometry.dispose();
+                bolt.material.dispose();
+            });
+            glow.geometry.dispose();
+            glow.material.dispose();
+            return;
+        }
+
+        // Update the paths of the bolts
+        bolts.forEach(({ bolt, boltGeometry }) => {
+            const newPoints = generateLightningPath(source, target);
+            boltGeometry.setFromPoints(newPoints);
+        });
+
+        requestAnimationFrame(animateBolts);
+    }
+
+    animateBolts();
+}
+
+function generateLightningPath(source, target) {
+    const points = [];
+    const segments = 10; // Number of segments in the lightning bolt
+    const sourceVector = new THREE.Vector3(source.x, source.y, source.z);
+    const targetVector = new THREE.Vector3(target.x, target.y, target.z);
+    const direction = new THREE.Vector3().subVectors(targetVector, sourceVector);
+    const segmentLength = direction.length() / segments;
+    direction.normalize();
+
+    for (let j = 0; j <= segments; j++) {
+        const point = sourceVector.clone().add(direction.clone().multiplyScalar(j * segmentLength));
+
+        // Add randomness to create jagged effect
+        if (j > 0 && j < segments) {
+            point.x += (Math.random() - 0.5) * segmentLength * 0.5;
+            point.y += (Math.random() - 0.5) * segmentLength * 0.5;
+            point.z += (Math.random() - 0.5) * segmentLength * 0.5;
+        }
+
+        points.push(point);
+    }
+
+    return points;
+}
+
+function animatePersistentLightningBolts(pathNodeIds) {
+    clearActiveLightningBolts(); // Clear previous lightning bolts
+
+    for (let i = 1; i < pathNodeIds.length; i++) {
+        const prevNodeId = pathNodeIds[i - 1];
+        const currentNodeId = pathNodeIds[i];
+
+        const sourceMesh = nodeMeshMap.get(prevNodeId);
+        const targetMesh = nodeMeshMap.get(currentNodeId);
+
+        if (sourceMesh && targetMesh) {
+            createAnimatedLightningBolt(sourceMesh.position, targetMesh.position);
+        }
+    }
+}
+
+function clearActiveLightningBolts() {
+    activeLightningBolts.forEach(group => {
+        scene.remove(group);
+        group.children.forEach(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+    });
+    activeLightningBolts = [];
+}
+
+// Update the highlight function to use persistent lightning bolts
 function highlightDiameterPath(sourceNodeId) {
     clearHighlights(); // Clear previous state & cancel animations
 
     if (!adjacencyList || adjacencyList.size === 0) return;
 
-    // 1. BFS
     const { distances, predecessors } = bfs(sourceNodeId, adjacencyList, graphData.nodes);
 
-    // 2. Find Max Distance & Furthest Nodes
     let maxDistance = 0;
     distances.forEach(dist => {
         if (dist !== Infinity && dist > maxDistance) maxDistance = dist;
     });
 
-    // Handle edge cases (single node, disconnected)
     if (maxDistance === 0) {
-        console.log("Node is isolated, single, or disconnected.");
         const sourceMesh = nodeMeshMap.get(sourceNodeId);
         if (sourceMesh) {
             sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
@@ -710,142 +818,20 @@ function highlightDiameterPath(sourceNodeId) {
         if (dist === maxDistance) furthestNodesIds.push(nodeId);
     });
 
-    console.log(`Max distance from ${sourceNodeId}: ${maxDistance}`);
-    console.log(`Furthest node(s): ${furthestNodesIds.join(', ')}`);
-
-    // 3. Highlight Source Node Immediately
     const sourceMesh = nodeMeshMap.get(sourceNodeId);
     if (sourceMesh) {
         sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
-        // Add source mesh to highlightedElements *only once*
         if (!highlightedElements.nodes.includes(sourceMesh)) {
             highlightedElements.nodes.push(sourceMesh);
         }
-    } else {
-        console.error("Source mesh not found!");
-        return; // Cannot proceed without source mesh
     }
-
-
-    // 4. Trigger Animation for each path
-    const stepDelay = 150; // Milliseconds between animation steps - ADJUST AS NEEDED
 
     furthestNodesIds.forEach(targetNodeId => {
         const pathNodeIds = reconstructPath(sourceNodeId, targetNodeId, predecessors);
-        if (pathNodeIds && pathNodeIds.length > 1) { // Ensure path exists and has > 1 node
-            animatePathHighlight(pathNodeIds, stepDelay);
-        } else if (pathNodeIds) {
-            // Path has only the source node, make sure target (which is source) is red
-            if (sourceMesh) sourceMesh.material = HIGHLIGHT_NODE_MATERIAL;
+        if (pathNodeIds && pathNodeIds.length > 1) {
+            animatePersistentLightningBolts(pathNodeIds);
         }
     });
-}
-
-// --- Advanced Plasma Effect with Lightning-like Appearance ---
-function createLightningPlasmaMaterial() {
-    return new THREE.ShaderMaterial({
-        uniforms: {
-            time: { value: 0 },
-            color1: { value: new THREE.Color(0x00ffff) }, // Cyan
-            color2: { value: new THREE.Color(0xffffff) }, // White
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform float time;
-            uniform vec3 color1;
-            uniform vec3 color2;
-            varying vec2 vUv;
-
-            // Simple noise function for lightning effect
-            float noise(vec2 p) {
-                return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-            }
-
-            void main() {
-                // Create a moving noise pattern
-                float n = noise(vUv * 10.0 + vec2(time * 2.0, 0.0));
-                n = smoothstep(0.4, 0.6, n); // Sharpen the noise for a lightning effect
-
-                // Interpolate between two colors based on the noise
-                vec3 plasmaColor = mix(color1, color2, n);
-
-                // Add a glow effect
-                float glow = 0.5 + 0.5 * sin(10.0 * vUv.x - time * 5.0);
-                plasmaColor *= glow;
-
-                gl_FragColor = vec4(plasmaColor, 1.0);
-            }
-        `,
-        transparent: true,
-    });
-}
-
-function animateLightningPlasmaFlow(pathNodeIds) {
-    const plasmaSpeed = 0.05; // Speed of the plasma flow
-
-    pathNodeIds.forEach((nodeId, index) => {
-        if (index === 0) return; // Skip the first node (no edge leading to it)
-
-        const prevNodeId = pathNodeIds[index - 1];
-        const edgeKey = `${Math.min(prevNodeId, nodeId)}-${Math.max(prevNodeId, nodeId)}`;
-        const edgeLine = edgeMeshMap.get(edgeKey);
-
-        if (edgeLine && edgeLine.material instanceof THREE.ShaderMaterial) {
-            const material = edgeLine.material;
-
-            // Animate the plasma effect
-            function updatePlasma() {
-                material.uniforms.time.value += plasmaSpeed;
-                material.needsUpdate = true;
-                requestAnimationFrame(updatePlasma);
-            }
-
-            updatePlasma();
-        }
-    });
-}
-
-// Update animatePathHighlight to include lightning plasma effect
-function animatePathHighlight(pathNodeIds, stepDelay) {
-    for (let i = 1; i < pathNodeIds.length; i++) {
-        const prevNodeId = pathNodeIds[i - 1];
-        const currentNodeId = pathNodeIds[i];
-        const isLastNode = (i === pathNodeIds.length - 1);
-
-        const timeoutId = setTimeout(() => {
-            const nodeMesh = nodeMeshMap.get(currentNodeId);
-            if (nodeMesh) {
-                nodeMesh.material = isLastNode ? HIGHLIGHT_NODE_MATERIAL : PATH_NODE_MATERIAL;
-                if (!highlightedElements.nodes.includes(nodeMesh)) {
-                    highlightedElements.nodes.push(nodeMesh);
-                }
-            }
-
-            const edgeKey = `${Math.min(prevNodeId, currentNodeId)}-${Math.max(prevNodeId, currentNodeId)}`;
-            const edgeLine = edgeMeshMap.get(edgeKey);
-
-            if (edgeLine) {
-                let existingHighlight = highlightedElements.edges.find(item => item.line === edgeLine);
-                if (!existingHighlight) {
-                    highlightedElements.edges.push(edgeLine);
-                }
-
-                // Add lightning plasma material for energy flow
-                edgeLine.material = createLightningPlasmaMaterial();
-            }
-        }, i * stepDelay);
-
-        activeHighlightTimeouts.push(timeoutId);
-    }
-
-    // Start lightning plasma flow animation after highlighting
-    setTimeout(() => animateLightningPlasmaFlow(pathNodeIds), pathNodeIds.length * stepDelay);
 }
 
 function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
