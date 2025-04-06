@@ -726,7 +726,7 @@ function createAnimatedLightningBolt(source, target, duration = 1000) {
 
             // Change colors dynamically
             const baseHue = 0.8; // Base hue for laser-like colors (0.7 is blue/purple range)
-            const hueVariation = 0.1; // Small variation around the base hue
+            const hueVariation = 0.2; // Small variation around the base hue
             const hue = (baseHue + (Math.random() * hueVariation - hueVariation / 2)) % 1; // Constrain to range [0, 1]
             boltMaterial.color.setHSL(hue, 1, 0.5); // Laser-like vibrant colors
         });
