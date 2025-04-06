@@ -686,7 +686,6 @@ function createAnimatedLightningBolt(source, target, duration = 1000) {
     const group = new THREE.Group(); // Group to hold multiple rays
 
     const rayCount = 5; // Number of rays per lightning bolt
-    const glowMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5 }); // Pink glow
 
     const bolts = [];
 
@@ -701,11 +700,6 @@ function createAnimatedLightningBolt(source, target, duration = 1000) {
         group.add(bolt);
         bolts.push({ bolt, boltGeometry, boltMaterial });
     }
-
-    const glowGeometry = new THREE.SphereGeometry(0.9, 16, 16);
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.position.copy(source);
-    group.add(glow);
 
     scene.add(group);
 
@@ -722,8 +716,6 @@ function createAnimatedLightningBolt(source, target, duration = 1000) {
                 boltGeometry.dispose();
                 boltMaterial.dispose();
             });
-            glow.geometry.dispose();
-            glow.material.dispose();
             return;
         }
 
@@ -738,10 +730,6 @@ function createAnimatedLightningBolt(source, target, duration = 1000) {
             const hue = (baseHue + (Math.random() * hueVariation - hueVariation / 2)) % 1; // Constrain to range [0, 1]
             boltMaterial.color.setHSL(hue, 1, 0.5); // Laser-like vibrant colors
         });
-
-        // Update glow color dynamically
-        const glowHue = 0.8 + ((performance.now() * 0.001) % 0.1); // Keep hue in the pink/purple range
-        glowMaterial.color.setHSL(glowHue, 1, 0.7);
 
         requestAnimationFrame(animateBolts);
     }
@@ -771,7 +759,9 @@ function generateLightningPath(source, target) {
         points.push(point);
     }
 
-    return points;
+    // Create a smooth curve using CatmullRomCurve3
+    const curve = new THREE.CatmullRomCurve3(points);
+    return curve.getPoints(segments * 10); // Increase the number of points for a smoother curve
 }
 
 function animatePersistentLightningBolts(pathNodeIds) {
