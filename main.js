@@ -682,11 +682,11 @@ function reconstructPath(source, target, predecessors) {
     return path; // Array of node IDs from source to target
 }
 
-function createAnimatedLightningBolt(source, target, duration = 1500) {
+function createAnimatedLightningBolt(source, target, duration = 1000) {
     const group = new THREE.Group(); // Group to hold multiple rays
 
     const rayCount = 5; // Number of rays per lightning bolt
-    const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 });
+    const glowMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5 }); // Pink glow
 
     const bolts = [];
 
@@ -699,10 +699,10 @@ function createAnimatedLightningBolt(source, target, duration = 1500) {
 
         const bolt = new THREE.Line(boltGeometry, boltMaterial);
         group.add(bolt);
-        bolts.push({ bolt, boltGeometry });
+        bolts.push({ bolt, boltGeometry, boltMaterial });
     }
 
-    const glowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const glowGeometry = new THREE.SphereGeometry(0.9, 16, 16);
     const glow = new THREE.Mesh(glowGeometry, glowMaterial);
     glow.position.copy(source);
     group.add(glow);
@@ -718,20 +718,30 @@ function createAnimatedLightningBolt(source, target, duration = 1500) {
         if (elapsedTime > duration) {
             // Remove the group after the duration
             scene.remove(group);
-            bolts.forEach(({ bolt, boltGeometry }) => {
+            bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
                 boltGeometry.dispose();
-                bolt.material.dispose();
+                boltMaterial.dispose();
             });
             glow.geometry.dispose();
             glow.material.dispose();
             return;
         }
 
-        // Update the paths of the bolts
-        bolts.forEach(({ bolt, boltGeometry }) => {
+        // Update the paths and colors of the bolts
+        bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
             const newPoints = generateLightningPath(source, target);
             boltGeometry.setFromPoints(newPoints);
+
+            // Change colors dynamically
+            const baseHue = 0.8; // Base hue for laser-like colors (0.7 is blue/purple range)
+            const hueVariation = 0.1; // Small variation around the base hue
+            const hue = (baseHue + (Math.random() * hueVariation - hueVariation / 2)) % 1; // Constrain to range [0, 1]
+            boltMaterial.color.setHSL(hue, 1, 0.5); // Laser-like vibrant colors
         });
+
+        // Update glow color dynamically
+        const glowHue = 0.8 + ((performance.now() * 0.001) % 0.1); // Keep hue in the pink/purple range
+        glowMaterial.color.setHSL(glowHue, 1, 0.7);
 
         requestAnimationFrame(animateBolts);
     }
@@ -753,9 +763,9 @@ function generateLightningPath(source, target) {
 
         // Add randomness to create jagged effect
         if (j > 0 && j < segments) {
-            point.x += (Math.random() - 0.5) * segmentLength * 0.5;
-            point.y += (Math.random() - 0.5) * segmentLength * 0.5;
-            point.z += (Math.random() - 0.5) * segmentLength * 0.5;
+            point.x += (Math.random() - 0.5) * segmentLength * 1.5;
+            point.y += (Math.random() - 0.5) * segmentLength * 1.5;
+            point.z += (Math.random() - 0.5) * segmentLength * 1.5;
         }
 
         points.push(point);
