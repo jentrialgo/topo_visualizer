@@ -105,14 +105,14 @@ function setupPostProcessing() {
     // Create a bloom layer
     bloomLayer = new THREE.Layers();
     bloomLayer.set(1); // Use layer 1 for objects that should bloom
-    
+
     // Create effect composer
     composer = new THREE.EffectComposer(renderer);
-    
+
     // Add the main render pass
     const renderPass = new THREE.RenderPass(scene, camera);
     composer.addPass(renderPass);
-    
+
     // Add bloom pass for the glow effect
     bloomPass = new THREE.UnrealBloomPass(
         new THREE.Vector2(container.clientWidth, container.clientHeight),
@@ -282,7 +282,6 @@ function onNodeClick(event) {
         const clickedMesh = intersects[0].object;
         if (clickedMesh.userData && clickedMesh.userData.nodeId !== undefined) {
             const sourceNodeId = clickedMesh.userData.nodeId;
-            console.log(`Clicked Node ID: ${sourceNodeId}`);
             highlightDiameterPath(sourceNodeId);
         }
     }
@@ -711,16 +710,28 @@ function reconstructPath(source, target, predecessors) {
     return path; // Array of node IDs from source to target
 }
 
-function createAnimatedLightningBolt(source, target, duration = 3000, isPersistent = false) {
-    const group = new THREE.Group(); // Group to hold multiple rays
+function createProgressiveLightningBolt(source, target, duration = 1000, isPersistent = false) {
+    // Validate inputs
+    if (!source || !target || 
+        !(source instanceof THREE.Vector3) || 
+        !(target instanceof THREE.Vector3)) {
+        console.error('Invalid source or target vectors for lightning bolt', { source, target });
+        return null; // Return null instead of creating an invalid bolt
+    }
+    
+    const group = new THREE.Group();
     activeLightningBolts.push(group);
 
     const rayCount = 5; // Number of rays per lightning bolt
     const bolts = [];
 
+    // Define parameters for progression
+    const progressionDuration = 500; // Time to travel from source to target (ms)
+    const progressionStartDelay = 100; // Slight delay before starting (ms)
+
     for (let i = 0; i < rayCount; i++) {
-        // Create distinct material for each bolt with controlled glow properties
-        const boltMaterial = new THREE.MeshStandardMaterial({ 
+        // Create material with energy-like properties
+        const boltMaterial = new THREE.MeshStandardMaterial({
             color: 0x88aaff,
             transparent: true,
             opacity: 0.7,
@@ -728,29 +739,21 @@ function createAnimatedLightningBolt(source, target, duration = 3000, isPersiste
             emissiveIntensity: 2.0,
             side: THREE.DoubleSide
         });
-        
-        const points = generateLightningPath(source, target);
-        
-        // Create a thinner tube geometry for more lightning-like appearance
-        const curve = new THREE.CatmullRomCurve3(points);
-        const tubeGeometry = new THREE.TubeGeometry(
-            curve,
-            64,  // tubularSegments
-            0.1, // radius - reduced for finer bolts
-            8,   // radiusSegments 
-            false // closed
-        );
-        
-        // Create a mesh for the tube
-        const bolt = new THREE.Mesh(tubeGeometry, boltMaterial);
+
+        // Initially create an empty bolt
+        const emptyGeometry = new THREE.BufferGeometry();
+        const bolt = new THREE.Mesh(emptyGeometry, boltMaterial);
         bolt.layers.enable(1); // Enable bloom layer
         group.add(bolt);
-        
+
         // Store references to the bolt components
         bolts.push({
             bolt: bolt,
-            boltGeometry: tubeGeometry,
-            boltMaterial: boltMaterial
+            boltGeometry: emptyGeometry,
+            boltMaterial: boltMaterial,
+            progress: 0, // Track progress from 0-1
+            // Add slight variation in progression timing per bolt
+            progressionSpeed: 1.0 + (Math.random() * 0.4 - 0.2) // 0.8-1.2x speed variation
         });
     }
 
@@ -759,83 +762,153 @@ function createAnimatedLightningBolt(source, target, duration = 3000, isPersiste
     // Animate the lightning bolts
     const startTime = performance.now();
     let lastUpdateTime = startTime;
-    const updateInterval = 5;
+    const updateInterval = 16; // ~60fps
 
     function animateBolts() {
-        const currentTime = performance.now();
-        const elapsedTime = currentTime - startTime;
-        const timeSinceLastUpdate = currentTime - lastUpdateTime;
+        try {
+            const currentTime = performance.now();
+            const elapsedTime = currentTime - startTime;
+            const timeSinceLastUpdate = currentTime - lastUpdateTime;
 
-        // For non-persistent bolts, remove after duration
-        if (!isPersistent && elapsedTime > duration) {
-            // Remove the group after the duration
-            scene.remove(group);
-            bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
-                boltGeometry.dispose();
-                boltMaterial.dispose();
-            });
-            // Remove from active lightning bolts array
-            const index = activeLightningBolts.indexOf(group);
-            if (index > -1) {
-                activeLightningBolts.splice(index, 1);
+            // For non-persistent bolts, remove after duration
+            if (!isPersistent && elapsedTime > duration) {
+                scene.remove(group);
+                bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
+                    boltGeometry.dispose();
+                    boltMaterial.dispose();
+                });
+                const index = activeLightningBolts.indexOf(group);
+                if (index > -1) {
+                    activeLightningBolts.splice(index, 1);
+                }
+                return;
             }
-            return;
-        }
 
-        // Only update the bolts every updateInterval milliseconds
-        if (timeSinceLastUpdate > updateInterval) {
-            lastUpdateTime = currentTime;
-            
-            // Update each bolt individually
-            for (let i = 0; i < bolts.length; i++) {
-                const { bolt, boltGeometry, boltMaterial } = bolts[i];
-                
-                // Remove old geometry
-                group.remove(bolt);
-                boltGeometry.dispose();
-                
-                // Generate new path with more controlled randomness
-                const newPoints = generateLightningPath(source, target);
-                const newCurve = new THREE.CatmullRomCurve3(newPoints);
-                
-                // Create new geometry
-                const newGeometry = new THREE.TubeGeometry(
-                    newCurve,
-                    64,  // tubularSegments
-                    0.05 + Math.random() * 0.1, // random radius between 0.05 and 0.15
-                    8,   // radiusSegments
-                    false // closed
-                );
-                
-                // Create new bolt mesh
-                const newBolt = new THREE.Mesh(newGeometry, boltMaterial);
-                newBolt.layers.enable(1);
-                group.add(newBolt);
-                
-                // Update references
-                bolts[i].bolt = newBolt;
-                bolts[i].boltGeometry = newGeometry;
-                
-                // Update material with controlled colors and intensities
-                const baseHue = 0.9; // Pinkish-blue color
-                const hueVariation = 0.1;
-                const hue = (baseHue + (Math.random() * hueVariation - hueVariation/2)) % 1;
-                
-                boltMaterial.color.setHSL(hue, 1, 0.6);
-                boltMaterial.emissive.setHSL(hue, 1, 0.8);
-                
-                // Control emissive intensity with a sine wave for natural pulsing
-                // plus small random variation for flickering
-                const pulseFrequency = 0.002; // Controls how fast the pulse happens
-                const pulseBase = 1.0 + Math.sin(currentTime * pulseFrequency) * 0.5;
-                const flicker = Math.random() * 0.5;
-                
-                boltMaterial.emissiveIntensity = pulseBase + flicker;
-                boltMaterial.needsUpdate = true;
+            // Only update the bolts every updateInterval milliseconds
+            if (timeSinceLastUpdate > updateInterval) {
+                lastUpdateTime = currentTime;
+
+                // Update each bolt individually
+                for (let i = 0; i < bolts.length; i++) {
+                    const bolt = bolts[i];
+
+                    try {
+                        // Calculate progression based on elapsed time
+                        if (elapsedTime > progressionStartDelay) {
+                            const progressionTime = elapsedTime - progressionStartDelay;
+
+                            // If this is a repeating bolt (persistent or we're within duration)
+                            if (isPersistent || progressionTime < duration) {
+                                // Calculate cycle time (for repeating bolts)
+                                const cycleTime = progressionTime % (progressionDuration + 200);
+
+                                if (cycleTime <= progressionDuration) {
+                                    // During progression phase
+                                    bolt.progress = (cycleTime / progressionDuration) * bolt.progressionSpeed;
+                                    bolt.progress = Math.min(bolt.progress, 1.0); // Clamp to 1.0
+                                } else {
+                                    // Reset phase (brief pause before next bolt)
+                                    bolt.progress = 0;
+                                    // Generate new bolt parameters for variety
+                                    bolt.progressionSpeed = 1.0 + (Math.random() * 0.4 - 0.2);
+                                }
+                            }
+                        }
+
+                        // Remove old geometry
+                        group.remove(bolt.bolt);
+                        bolt.boltGeometry.dispose();
+
+                        // Generate complete path
+                        const fullPath = generateLightningPath(source, target);
+
+                        // Create partial path based on progress
+                        let visiblePath;
+                        if (bolt.progress <= 0) {
+                            // At the beginning, just show a point
+                            visiblePath = [fullPath[0]];
+                        } else if (bolt.progress >= 1) {
+                            // At the end, show full path
+                            visiblePath = fullPath;
+                        } else {
+                            // During progression, show partial path
+                            const endIndex = Math.floor(fullPath.length * bolt.progress);
+                            visiblePath = fullPath.slice(0, endIndex + 1);
+                        }
+
+                        // Make sure we have at least 2 points for the curve
+                        if (visiblePath.length < 2) {
+                            if (visiblePath.length === 1) {
+                                // If we only have one point, duplicate it slightly offset
+                                const p = visiblePath[0].clone();
+                                p.x += 0.01;
+                                p.y += 0.01;
+                                p.z += 0.01;
+                                visiblePath.push(p);
+                            } else {
+                                // If we have no points, use source and target
+                                visiblePath = [source.clone(), target.clone()];
+                            }
+                        }
+
+                        // Create curve from visible path
+                        const curve = new THREE.CatmullRomCurve3(visiblePath);
+
+                        // Create new geometry based on progress
+                        let newGeometry;
+                        try {
+                            newGeometry = new THREE.TubeGeometry(
+                                curve,
+                                64,  // tubularSegments
+                                0.05 + Math.random() * 0.1, // radius variation
+                                8,   // radiusSegments
+                                false // closed
+                            );
+                        } catch (error) {
+                            console.warn('Error creating tube geometry:', error);
+                            // Fallback to simple line geometry if tube fails
+                            newGeometry = new THREE.BufferGeometry().setFromPoints(visiblePath);
+                        }
+
+                        // Create new bolt mesh
+                        const newBolt = new THREE.Mesh(newGeometry, bolt.boltMaterial);
+                        newBolt.layers.enable(1);
+                        group.add(newBolt);
+
+                        // Update references
+                        bolt.bolt = newBolt;
+                        bolt.boltGeometry = newGeometry;
+
+                        // Update material with controlled colors and intensities
+                        const baseHue = 0.8; // Pinkish-blue color
+                        const hueVariation = 0.1;
+                        const hue = (baseHue + (Math.random() * hueVariation - hueVariation / 2)) % 1;
+
+                        bolt.boltMaterial.color.setHSL(hue, 1, 0.6);
+                        bolt.boltMaterial.emissive.setHSL(hue, 1, 0.8);
+
+                        // Pulse intensity based on progression
+                        const pulseBase = 1.0 + Math.sin(currentTime * 0.002) * 0.5;
+                        const flicker = Math.random() * 0.5;
+                        bolt.boltMaterial.emissiveIntensity = pulseBase + flicker;
+
+                        // Tip glow: make the front part of the bolt brighter
+                        if (bolt.progress > 0 && bolt.progress < 1) {
+                            // Enhance brightness at the tip of the progressing bolt
+                            bolt.boltMaterial.emissiveIntensity += (1 - bolt.progress) * 2;
+                        }
+
+                        bolt.boltMaterial.needsUpdate = true;
+                    } catch (boltError) {
+                        console.error('Error updating bolt:', boltError);
+                    }
+                }
             }
-        }
 
-        requestAnimationFrame(animateBolts);
+            requestAnimationFrame(animateBolts);
+        } catch (error) {
+            console.error('Error in animateBolts function:', error);
+        }
     }
 
     animateBolts();
@@ -843,30 +916,72 @@ function createAnimatedLightningBolt(source, target, duration = 3000, isPersiste
 }
 
 function generateLightningPath(source, target) {
+    // Make sure source and target are valid Vector3 objects
+    if (!(source instanceof THREE.Vector3) || !(target instanceof THREE.Vector3)) {
+        console.error('Invalid source or target for lightning path', { source, target });
+        // Create default vectors if input is invalid
+        source = source instanceof THREE.Vector3 ? source : new THREE.Vector3(0, 0, 0);
+        target = target instanceof THREE.Vector3 ? target : new THREE.Vector3(0, 0, 1);
+    }
+    
     const points = [];
     const segments = 10; // Number of segments in the lightning bolt
-    const sourceVector = new THREE.Vector3(source.x, source.y, source.z);
-    const targetVector = new THREE.Vector3(target.x, target.y, target.z);
+    
+    // Clone source and target to avoid modifying originals
+    const sourceVector = source.clone();
+    const targetVector = target.clone();
+    
+    // Calculate direction and segment length
     const direction = new THREE.Vector3().subVectors(targetVector, sourceVector);
+    const distance = direction.length();
+    
+    // Check if source and target are too close - if so, add minimum distance
+    if (distance < 0.001) {
+        targetVector.x += 0.1;
+        targetVector.y += 0.1;
+        targetVector.z += 0.1;
+        direction.subVectors(targetVector, sourceVector);
+    }
+    
     const segmentLength = direction.length() / segments;
     direction.normalize();
 
-    for (let j = 0; j <= segments; j++) {
+    // Always add starting point
+    points.push(sourceVector.clone());
+
+    // Add intermediate points with randomization
+    for (let j = 1; j < segments; j++) {
         const point = sourceVector.clone().add(direction.clone().multiplyScalar(j * segmentLength));
 
         // Add randomness to create jagged effect
-        if (j > 0 && j < segments) {
-            point.x += (Math.random() - 0.5) * segmentLength * 1.5;
-            point.y += (Math.random() - 0.5) * segmentLength * 1.5;
-            point.z += (Math.random() - 0.5) * segmentLength * 1.5;
-        }
+        point.x += (Math.random() - 0.5) * segmentLength * 1.5;
+        point.y += (Math.random() - 0.5) * segmentLength * 1.5;
+        point.z += (Math.random() - 0.5) * segmentLength * 1.5;
 
         points.push(point);
     }
 
+    // Always add ending point
+    points.push(targetVector.clone());
+
+    // Validate that all points are valid Vector3 objects
+    const validPoints = points.filter(p => 
+        p && p instanceof THREE.Vector3 && 
+        typeof p.x === 'number' && 
+        typeof p.y === 'number' && 
+        typeof p.z === 'number' && 
+        !isNaN(p.x) && !isNaN(p.y) && !isNaN(p.z)
+    );
+
+    // Ensure we have at least 2 points
+    if (validPoints.length < 2) {
+        console.warn('Not enough valid points for lightning path, using fallback');
+        return [sourceVector.clone(), targetVector.clone()];
+    }
+
     // Create a smooth curve using CatmullRomCurve3
-    const curve = new THREE.CatmullRomCurve3(points);
-    return curve.getPoints(segments * 10); // Increase the number of points for a smoother curve
+    const curve = new THREE.CatmullRomCurve3(validPoints);
+    return curve.getPoints(segments * 10); // Increase points for smoother curve
 }
 
 function animatePersistentLightningBolts(pathNodeIds) {
@@ -906,7 +1021,7 @@ function highlightDiameterPath(sourceNodeId) {
 
     let maxDistance = 0;
     let furthestNodesIds = [];
-    
+
     // Find the maximum distance and furthest nodes
     distances.forEach((dist, nodeId) => {
         if (dist !== Infinity) {
@@ -947,25 +1062,29 @@ function highlightDiameterPath(sourceNodeId) {
                     highlightedElements.nodes.push(nodeMesh);
                 }
             }
-            
+
             // Highlight target node
             const targetMesh = nodeMeshMap.get(targetNodeId);
             if (targetMesh) {
                 targetMesh.material = HIGHLIGHT_NODE_MATERIAL;
                 highlightedElements.nodes.push(targetMesh);
             }
-            
+
             // Create animated lightning bolts between each pair of nodes
             for (let i = 1; i < pathNodeIds.length; i++) {
-                const sourceId = pathNodeIds[i-1];
+                const sourceId = pathNodeIds[i - 1];
                 const targetId = pathNodeIds[i];
-                
+
                 const sourceMesh = nodeMeshMap.get(sourceId);
                 const targetMesh = nodeMeshMap.get(targetId);
-                
+
                 if (sourceMesh && targetMesh) {
-                    // Create persistent animated lightning bolts
-                    createAnimatedLightningBolt(sourceMesh.position, targetMesh.position, 3000, false);
+                    // Use the new progressive lightning function with timing based on position in path
+                    const delay = (i - 1) * 300; // Staggered delay for each segment
+
+                    setTimeout(() => {
+                        createProgressiveLightningBolt(sourceMesh.position, targetMesh.position, 3000, true);
+                    }, delay);
                 }
             }
         }
@@ -1307,7 +1426,7 @@ function visualizeGraph(graph, type, use3DLayout = false, params = {}) {
 function animate() {
     requestAnimationFrame(animate);
     controls.update(); // Only needed if enableDamping or autoRotate are set
-    
+
     // Use EffectComposer for rendering with bloom effect
     composer.render();
 }
@@ -1317,7 +1436,7 @@ function onWindowResize() {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
-    
+
     // Also update composer size when window resizes
     composer.setSize(container.clientWidth, container.clientHeight);
 }
