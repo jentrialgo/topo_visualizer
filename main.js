@@ -984,22 +984,6 @@ function generateLightningPath(source, target) {
     return curve.getPoints(segments * 10); // Increase points for smoother curve
 }
 
-function animatePersistentLightningBolts(pathNodeIds) {
-    clearActiveLightningBolts(); // Clear previous lightning bolts
-
-    for (let i = 1; i < pathNodeIds.length; i++) {
-        const prevNodeId = pathNodeIds[i - 1];
-        const currentNodeId = pathNodeIds[i];
-
-        const sourceMesh = nodeMeshMap.get(prevNodeId);
-        const targetMesh = nodeMeshMap.get(currentNodeId);
-
-        if (sourceMesh && targetMesh) {
-            createAnimatedLightningBolt(sourceMesh.position, targetMesh.position, 3000, false);
-        }
-    }
-}
-
 function clearActiveLightningBolts() {
     activeLightningBolts.forEach(group => {
         scene.remove(group);
