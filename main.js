@@ -644,6 +644,7 @@ function bfs(startNodeId, adj, allNodes) {
 
 // --- Visualization Functions ---
 function clearVisualization() {
+    clearHighlights();
     nodeMeshes.forEach(mesh => {
         scene.remove(mesh);
         mesh.geometry.dispose();
