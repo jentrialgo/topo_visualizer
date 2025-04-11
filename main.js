@@ -169,7 +169,7 @@ function updateParameterInputs() {
     } else if (type === 'hypercube') {
         // Dimension 'd' for d-dimensional hypercube
         // Limit max dimension for practical visualization/performance (e.g., 6 -> 64 nodes)
-        addNumericInput('dimension', 'Dimension (d):', 3, 1, 6);
+        addNumericInput('dimension', 'Dimension (d):', 4, 1, 6);
     }
     // Add else if blocks for other topologies
 
@@ -322,7 +322,7 @@ function generateGraphAndMetrics() {
     } else if (type === 'torus') {
         graphData = generateTorus(params.rows || 4, params.cols || 5);
     } else if (type === 'hypercube') { // **** ADD THIS ELSE IF ****
-        graphData = generateHypercube(params.dimension || 3); // Default to 3D cube
+        graphData = generateHypercube(params.dimension || 4); // Default to 3D cube
     }
     // --- End Generation ---
 
