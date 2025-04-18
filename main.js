@@ -765,24 +765,42 @@ function createProgressiveLightningBolt(source, target, duration = 1000, isPersi
     let lastUpdateTime = startTime;
     const updateInterval = 16; // ~60fps
 
+    // Keep track if this bolt's animation loop should continue
+    let continueAnimation = true;
+
     function animateBolts() {
+        // *** ADD CHECK: Stop if the group is no longer active or told to stop ***
+        if (!continueAnimation || !activeLightningBolts.includes(group)) {
+            // Ensure resources are cleaned up if removed externally
+            if (!scene.children.includes(group)) { // Check if already removed
+                 bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
+                    // Check if geometry/material still exist before disposing
+                    if (boltGeometry) boltGeometry.dispose();
+                    if (boltMaterial) boltMaterial.dispose();
+                });
+            }
+            // Ensure group is removed if it wasn't already
+            else {
+                scene.remove(group);
+            }
+            // Ensure it's removed from the tracking array if somehow still present
+            const index = activeLightningBolts.indexOf(group);
+            if (index > -1) {
+                activeLightningBolts.splice(index, 1);
+            }
+            return; // Stop the animation loop
+        }
+
         try {
             const currentTime = performance.now();
             const elapsedTime = currentTime - startTime;
             const timeSinceLastUpdate = currentTime - lastUpdateTime;
 
-            // For non-persistent bolts, remove after duration
+            // For non-persistent bolts, signal to stop after duration
             if (!isPersistent && elapsedTime > duration) {
-                scene.remove(group);
-                bolts.forEach(({ bolt, boltGeometry, boltMaterial }) => {
-                    boltGeometry.dispose();
-                    boltMaterial.dispose();
-                });
-                const index = activeLightningBolts.indexOf(group);
-                if (index > -1) {
-                    activeLightningBolts.splice(index, 1);
-                }
-                return;
+                // Set flag to stop animation on the next frame check
+                continueAnimation = false;
+                // Don't remove from scene/array here, let the check at the top handle it
             }
 
             // Only update the bolts every updateInterval milliseconds
@@ -906,11 +924,32 @@ function createProgressiveLightningBolt(source, target, duration = 1000, isPersi
                 }
             }
 
-            requestAnimationFrame(animateBolts);
+            // Schedule next frame only if animation should continue
+            // Check continueAnimation again before scheduling
+            if (continueAnimation && activeLightningBolts.includes(group)) {
+                 requestAnimationFrame(animateBolts);
+            }
+
         } catch (error) {
             console.error('Error in animateBolts function:', error);
+            // Stop animation on error to prevent loops
+            continueAnimation = false;
+            const index = activeLightningBolts.indexOf(group);
+            if (index > -1) {
+                activeLightningBolts.splice(index, 1);
+            }
+            if (scene.children.includes(group)) {
+                scene.remove(group);
+            }
         }
     }
+
+    // Add a function to explicitly stop this bolt's animation
+    group.userData.stopAnimation = () => {
+        continueAnimation = false;
+        // No need to remove from activeLightningBolts here,
+        // the check at the start of animateBolts will handle cleanup.
+    };
 
     animateBolts();
     return group;
@@ -986,14 +1025,22 @@ function generateLightningPath(source, target) {
 }
 
 function clearActiveLightningBolts() {
-    activeLightningBolts.forEach(group => {
+    // Create a copy of the array to iterate over, as stopAnimation might modify the original array indirectly
+    const boltsToClear = [...activeLightningBolts];
+    boltsToClear.forEach(group => {
+        // Call the stop function if it exists
+        if (group.userData && typeof group.userData.stopAnimation === 'function') {
+            group.userData.stopAnimation();
+        }
+        // Remove from scene and dispose resources immediately
+        // The animation loop check will prevent errors on the next frame
         scene.remove(group);
         group.children.forEach(child => {
             if (child.geometry) child.geometry.dispose();
             if (child.material) child.material.dispose();
         });
     });
-    activeLightningBolts = [];
+    activeLightningBolts = []; // Clear the main tracking array
 }
 
 // Update the highlight function to use persistent lightning bolts
@@ -1067,9 +1114,21 @@ function highlightDiameterPath(sourceNodeId) {
                     // Use the new progressive lightning function with timing based on position in path
                     const delay = (i - 1) * 300; // Staggered delay for each segment
 
-                    setTimeout(() => {
-                        createProgressiveLightningBolt(sourceMesh.position, targetMesh.position, 3000, true);
+                    // Store the timeout ID so it can be cleared
+                    const timeoutId = setTimeout(() => {
+                        // Remove this ID from the active list once the timeout fires
+                        const index = activeHighlightTimeouts.indexOf(timeoutId);
+                        if (index > -1) {
+                            activeHighlightTimeouts.splice(index, 1);
+                        }
+                        // Only create the bolt if highlights haven't been cleared in the meantime
+                        // (Checking if source/target nodes are still highlighted is a proxy)
+                        if (highlightedElements.nodes.includes(sourceMesh) && highlightedElements.nodes.includes(targetMesh)) {
+                           createProgressiveLightningBolt(sourceMesh.position, targetMesh.position, 3000, true);
+                        }
                     }, delay);
+                    // Add the timeout ID to the list immediately
+                    activeHighlightTimeouts.push(timeoutId);
                 }
             }
         }
