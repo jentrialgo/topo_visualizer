@@ -25,23 +25,25 @@ const avgPathLengthSpan = document.getElementById('avgPathLength'); // Add refer
 // --- Constants ---
 const NODE_RADIUS = 0.8;
 const NODE_SEGMENTS = 16;
-const EDGE_COLOR = 0xaaaaaa;
+const EDGE_COLOR = 0xcccccc; // Brighter grey for edges
 // Use MeshPhysicalMaterial for more advanced effects
 const NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
-    color: 0x00aaff,
-    metalness: 0.7,      // More metallic
-    roughness: 0.2,      // Smoother surface
-    clearcoat: 0.5,      // Add a clear coat layer
-    clearcoatRoughness: 0.1 // Make the clear coat smooth
+    color: 0x00ffff, // Brighter Cyan
+    metalness: 0.6,      // Slightly less metallic
+    roughness: 0.3,      // Slightly rougher
+    clearcoat: 0.6,      // Slightly stronger clear coat
+    clearcoatRoughness: 0.1,
+    emissive: 0x113333, // Add a subtle emissive glow
+    emissiveIntensity: 0.5
 });
 const EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
-const WRAP_EDGE_COLOR = 0xffaa00; // Orange for wrap edges (choose any contrasting color)
+const WRAP_EDGE_COLOR = 0xffcc00; // Brighter Orange for wrap edges
 const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
 
 // --- Highlighting Constants ---
-const HIGHLIGHT_NODE_COLOR = 0xff4444; // Red for source/target
-const PATH_NODE_COLOR = 0xffaa00;     // Orange for intermediate path nodes
-const PATH_EDGE_COLOR = 0xffdd44;     // Yellow for path edges
+const HIGHLIGHT_NODE_COLOR = 0xff6666; // Brighter Red for source/target
+const PATH_NODE_COLOR = 0xffcc66;     // Brighter Orange for intermediate path nodes
+const PATH_EDGE_COLOR = 0xffff66;     // Brighter Yellow for path edges
 
 // Create highlight materials once using MeshPhysicalMaterial
 const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
@@ -49,14 +51,18 @@ const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
     metalness: 0.7,
     roughness: 0.2,
     clearcoat: 0.5,
-    clearcoatRoughness: 0.1
+    clearcoatRoughness: 0.1,
+    emissive: 0x551111, // Add emissive glow to highlights
+    emissiveIntensity: 0.8
 });
 const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
     color: PATH_NODE_COLOR,
     metalness: 0.7,
     roughness: 0.2,
     clearcoat: 0.5,
-    clearcoatRoughness: 0.1
+    clearcoatRoughness: 0.1,
+    emissive: 0x553300, // Add emissive glow to path nodes
+    emissiveIntensity: 0.7
 });
 const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
 
@@ -81,7 +87,7 @@ function init() {
 // --- Three.js Setup ---
 function setupThreeJS() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a1a);
+    scene.background = new THREE.Color(0x282c34); // Lighter dark blue-grey background
 
     camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.z = 30; // Adjusted initial zoom
