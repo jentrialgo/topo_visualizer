@@ -41,9 +41,9 @@ const WRAP_EDGE_COLOR = 0xffcc00; // Brighter Orange for wrap edges
 const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
 
 // --- Highlighting Constants ---
-const HIGHLIGHT_NODE_COLOR = 0xff6666; // Brighter Red for source/target
-const PATH_NODE_COLOR = 0xffcc66;     // Brighter Orange for intermediate path nodes
-const PATH_EDGE_COLOR = 0xffff66;     // Brighter Yellow for path edges
+const HIGHLIGHT_NODE_COLOR = 0xff40c0; // Vibrant Magenta/Pink for source/target
+const PATH_NODE_COLOR = 0x99ff99;     // Bright Green for intermediate path nodes
+const PATH_EDGE_COLOR = 0xccffcc;     // Lighter Green for path edges/lightning hint
 
 // Create highlight materials once using MeshPhysicalMaterial
 const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
@@ -52,7 +52,7 @@ const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
     roughness: 0.2,
     clearcoat: 0.5,
     clearcoatRoughness: 0.1,
-    emissive: 0x551111, // Add emissive glow to highlights
+    emissive: 0x550033, // Darker magenta emissive glow
     emissiveIntensity: 0.8
 });
 const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
@@ -61,7 +61,7 @@ const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
     roughness: 0.2,
     clearcoat: 0.5,
     clearcoatRoughness: 0.1,
-    emissive: 0x553300, // Add emissive glow to path nodes
+    emissive: 0x225522, // Darker green emissive glow
     emissiveIntensity: 0.7
 });
 const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
@@ -756,12 +756,12 @@ function createProgressiveLightningBolt(source, target, duration = 1000, isPersi
     const progressionStartDelay = 100; // Slight delay before starting (ms)
 
     for (let i = 0; i < rayCount; i++) {
-        // Create material with energy-like properties
+        // Create material with energy-like properties - Use Greenish base
         const boltMaterial = new THREE.MeshStandardMaterial({
-            color: 0x88aaff,
+            color: 0x99ff99, // Match path node color
             transparent: true,
             opacity: 0.7,
-            emissive: 0xffffff,
+            emissive: 0xccffcc, // Lighter green emissive
             emissiveIntensity: 2.0,
             side: THREE.DoubleSide
         });
@@ -924,12 +924,12 @@ function createProgressiveLightningBolt(source, target, duration = 1000, isPersi
                         bolt.boltGeometry = newGeometry;
 
                         // Update material with controlled colors and intensities
-                        const baseHue = 0.8; // Pinkish-blue color
+                        const baseHue = 0.33; // Greenish hue
                         const hueVariation = 0.1;
                         const hue = (baseHue + (Math.random() * hueVariation - hueVariation / 2)) % 1;
 
-                        bolt.boltMaterial.color.setHSL(hue, 1, 0.6);
-                        bolt.boltMaterial.emissive.setHSL(hue, 1, 0.8);
+                        bolt.boltMaterial.color.setHSL(hue, 1, 0.7); // Lighter green base color
+                        bolt.boltMaterial.emissive.setHSL(hue, 1, 0.8); // Bright emissive
 
                         // Pulse intensity based on progression
                         const pulseBase = 1.0 + Math.sin(currentTime * 0.002) * 0.5;
