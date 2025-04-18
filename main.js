@@ -26,7 +26,14 @@ const avgPathLengthSpan = document.getElementById('avgPathLength'); // Add refer
 const NODE_RADIUS = 0.8;
 const NODE_SEGMENTS = 16;
 const EDGE_COLOR = 0xaaaaaa;
-const NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x00aaff, roughness: 0.5, metalness: 0.2 });
+// Use MeshPhysicalMaterial for more advanced effects
+const NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
+    color: 0x00aaff,
+    metalness: 0.7,      // More metallic
+    roughness: 0.2,      // Smoother surface
+    clearcoat: 0.5,      // Add a clear coat layer
+    clearcoatRoughness: 0.1 // Make the clear coat smooth
+});
 const EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
 const WRAP_EDGE_COLOR = 0xffaa00; // Orange for wrap edges (choose any contrasting color)
 const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
@@ -36,13 +43,25 @@ const HIGHLIGHT_NODE_COLOR = 0xff4444; // Red for source/target
 const PATH_NODE_COLOR = 0xffaa00;     // Orange for intermediate path nodes
 const PATH_EDGE_COLOR = 0xffdd44;     // Yellow for path edges
 
-// Create highlight materials once
-const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: HIGHLIGHT_NODE_COLOR, roughness: 0.5, metalness: 0.2 });
-const PATH_NODE_MATERIAL = new THREE.MeshStandardMaterial({ color: PATH_NODE_COLOR, roughness: 0.5, metalness: 0.2 });
+// Create highlight materials once using MeshPhysicalMaterial
+const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
+    color: HIGHLIGHT_NODE_COLOR,
+    metalness: 0.7,
+    roughness: 0.2,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.1
+});
+const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
+    color: PATH_NODE_COLOR,
+    metalness: 0.7,
+    roughness: 0.2,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.1
+});
 const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
 
 // Keep original materials accessible
-const ORIGINAL_NODE_MATERIAL = NODE_MATERIAL;
+const ORIGINAL_NODE_MATERIAL = NODE_MATERIAL; // This will now reference the MeshPhysicalMaterial
 const ORIGINAL_EDGE_MATERIAL = EDGE_MATERIAL;
 const ORIGINAL_WRAP_EDGE_MATERIAL = WRAP_EDGE_MATERIAL; // If using wrap edges
 
