@@ -107,7 +107,8 @@ function setupThreeJS() {
     // --- Event Listeners ---
     renderer.domElement.addEventListener('click', onNodeClick, false);
     // Add listener to clear highlights on background click
-    renderer.domElement.addEventListener('pointerdown', onPointerDown, false); // Use pointerdown for potentially easier background detection
+    renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
+    renderer.domElement.addEventListener('pointerup', onPointerUp, false);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -283,15 +284,37 @@ function addCheckboxInput(id, labelText, defaultChecked) {
     paramsContainer.appendChild(div);
 }
 
+// Track mouse position on pointer down
+let mouseDownPosition = null;
+
 function onPointerDown(event) {
-    // Check if the click was on the background (not on a node)
+    // Record the mouse position on pointer down
+    mouseDownPosition = {
+        x: event.clientX,
+        y: event.clientY
+    };
+}
+
+function onPointerUp(event) {
+    // Check if the pointer release was on the background (not on a node)
     mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
     mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObjects(nodeMeshes);
 
-    if (intersects.length === 0) {
-        // Clicked on background
+    // Check if the mouse moved between pointer down and up
+    const mouseUpPosition = {
+        x: event.clientX,
+        y: event.clientY
+    };
+    const movementThreshold = 5; // Allowable movement in pixels
+    const mouseMoved = mouseDownPosition && (
+        Math.abs(mouseDownPosition.x - mouseUpPosition.x) > movementThreshold ||
+        Math.abs(mouseDownPosition.y - mouseUpPosition.y) > movementThreshold
+    );
+
+    if (!mouseMoved && intersects.length === 0) {
+        // Only clear highlights if no nodes were clicked and the mouse did not move
         clearHighlights();
     }
 }
