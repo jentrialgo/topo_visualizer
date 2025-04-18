@@ -47,22 +47,22 @@ const PATH_EDGE_COLOR = 0xccffcc;     // Lighter Green for path edges/lightning 
 
 // Create highlight materials once using MeshPhysicalMaterial
 const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
-    color: HIGHLIGHT_NODE_COLOR,
-    metalness: 0.7,
-    roughness: 0.2,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.1,
-    emissive: 0x550033, // Darker magenta emissive glow
-    emissiveIntensity: 0.8
+    color: 0xFF007F, // Bright Pink
+    metalness: 0.3,
+    roughness: 0.4,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.2,
+    emissive: 0x8A2BE2, // Warmer Orange/Yellow emissive color
+    emissiveIntensity: 0.5
 });
 const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
-    color: PATH_NODE_COLOR,
-    metalness: 0.7,
-    roughness: 0.2,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.1,
-    emissive: 0x225522, // Darker green emissive glow
-    emissiveIntensity: 0.7
+    color: 0x8A2BE2, // Bright Purple
+    metalness: 0.5,
+    roughness: 0.4,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.2,
+    emissive: 0x9A3BE2, // Warmer Orange/Yellow emissive color
+    emissiveIntensity: 0.75
 });
 const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
 
