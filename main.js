@@ -41,27 +41,29 @@ const WRAP_EDGE_COLOR = 0xffcc00; // Brighter Orange for wrap edges
 const WRAP_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: WRAP_EDGE_COLOR });
 
 // --- Highlighting Constants ---
-const HIGHLIGHT_NODE_COLOR = 0xff40c0; // Vibrant Magenta/Pink for source/target
-const PATH_NODE_COLOR = 0x99ff99;     // Bright Green for intermediate path nodes
-const PATH_EDGE_COLOR = 0xccffcc;     // Lighter Green for path edges/lightning hint
+const HIGHLIGHT_NODE_COLOR = 0xFF007F;
+const NODE_EMISSIVE_COLOR = 0x8A2BE2;
+const PATH_NODE_COLOR = 0x8A2BE2;
+const PATH_NODE_EMISSIVE_COLOR = 0x9A3BE2;
+const PATH_EDGE_COLOR = 0x8A2BE2;
 
 // Create highlight materials once using MeshPhysicalMaterial
 const HIGHLIGHT_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
-    color: 0xFF007F, // Bright Pink
+    color: HIGHLIGHT_NODE_COLOR,
     metalness: 0.3,
     roughness: 0.4,
     clearcoat: 0.3,
     clearcoatRoughness: 0.2,
-    emissive: 0x8A2BE2, // Warmer Orange/Yellow emissive color
+    emissive: NODE_EMISSIVE_COLOR,
     emissiveIntensity: 0.5
 });
 const PATH_NODE_MATERIAL = new THREE.MeshPhysicalMaterial({
-    color: 0x8A2BE2, // Bright Purple
+    color: PATH_NODE_COLOR,
     metalness: 0.5,
     roughness: 0.4,
     clearcoat: 0.3,
     clearcoatRoughness: 0.2,
-    emissive: 0x9A3BE2, // Warmer Orange/Yellow emissive color
+    emissive: PATH_NODE_EMISSIVE_COLOR,
     emissiveIntensity: 0.75
 });
 const PATH_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: PATH_EDGE_COLOR });
