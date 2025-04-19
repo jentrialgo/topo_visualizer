@@ -6,6 +6,9 @@ rendering and provides an interactive interface to explore various graph structu
 
 ![Application Screenshot](screenshot.png)
 
+You can check out the live demo of the application
+[here](https://jentrialgo.github.io/topo_visualizer/).
+
 ## Features
 
 *   **Topology Generation:**
