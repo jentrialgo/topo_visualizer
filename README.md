@@ -1,16 +1,17 @@
 # Topology Visualizer
 
-This project is a web-based application that visualizes different graph topologies (like
-rings and meshes) and calculates their key network metrics. It uses Three.js for 3D
+This project is a web-based application that visualizes different network topologies (like
+rings and meshes) and calculates their key graph metrics. It uses Three.js for 3D
 rendering and provides an interactive interface to explore various graph structures.
+
+![Application Screenshot](screenshot.png)
 
 ## Features
 
 *   **Topology Generation:**
-    *   Generates ring and mesh topologies.
+    *   Generates ring, mesh, and hypercube topologies.
     *   Ring topology supports adjustable "skip" distances to create more complex ring variations.
     *   Mesh topology supports adjustable rows and columns.
-    *   Extensible to other topologies (tree, hypercube, etc.).
 *   **Interactive Visualization:**
     *   Uses Three.js for 3D rendering of nodes and edges.
     *   Orbit controls allow users to rotate, pan, and zoom the view.
@@ -40,8 +41,7 @@ rendering and provides an interactive interface to explore various graph structu
 
 ## How to Use
 
-1.  **Open the HTML file:** Open the `index.html` file (you'll need to create this file
-    and link it to the `main.js` file) in your web browser.
+1.  **Open the HTML file:** Open the `index.html` file.
 2.  **Select a Topology:** Choose a topology type from the dropdown menu (e.g., "ring" or
     "mesh").
 3.  **Adjust Parameters:** Modify the parameters for the selected topology (e.g., number
@@ -56,16 +56,16 @@ rendering and provides an interactive interface to explore various graph structu
 
 ## Project Structure
 
+*   **`index.html`:** The HTML file that contains the basic structure of the page,
+    including the container for the 3D scene, the dropdown menu, the input fields, the
+    generate button, and the metrics display.
+*   **`style.css`:** The CSS file that contains the styles for the page.
 *   **`main.js`:** Contains the core JavaScript code for the application, including:
     *   Three.js setup and rendering.
     *   UI event handling.
     *   Graph generation functions (e.g., `generateRing`, `generateMesh`).
     *   Metric calculation functions (e.g., `calculateGraphMetrics`, `bfs`).
     *   Visualization functions (e.g., `visualizeGraph`, `clearVisualization`).
-*   **`index.html`:** The HTML file that will contain the basic structure of the page,
-    including the container for the 3D scene, the dropdown menu, the input fields, the
-    generate button, and the metrics display.
-* **`style.css`:** (You'll need to create this) The CSS file that will contain the styles for the page.
 
 ## Development Notes
 
@@ -79,22 +79,6 @@ rendering and provides an interactive interface to explore various graph structu
     disconnected graphs.
 *   **Performance:** For very large graphs, performance could be improved by optimizing
     the rendering and metric calculation.
-
-## Future Improvements
-
-*   **More Topologies:** Add support for tree, hypercube, and other graph topologies.
-*   **Force-Directed Layout:** Implement a force-directed layout as a default or
-    alternative layout option.
-*   **Node/Edge Highlighting:** Allow users to highlight specific nodes or edges.
-*   **Node/Edge Labels:** Display labels for nodes and edges.
-*   **Performance Optimization:** Improve performance for large graphs.
-*   **More Metrics:** Add more network metrics (e.g., clustering coefficient, betweenness
-    centrality).
-* **UI/UX:** Improve the UI/UX of the application.
-
-## Author
-
-Joaquín Entrialgo
 
 ## License
 
